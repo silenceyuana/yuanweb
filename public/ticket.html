@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>发送工单 - 我的博客</title>
+    <link href="assets/css/theme.css" rel="stylesheet" />
+    <link rel="icon" href="assets/img/favicon.ico" />
+    <script src="assets/js/theme-sync.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background-color: var(--bg-color); }
+        .auth-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+        .auth-form { background: var(--section-odd-bg); padding: 2rem; border-radius: var(--border-radius-main); width: 100%; max-width: 500px; box-shadow: var(--modern-shadow); }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; margin-bottom: .5rem; color: var(--text-color-primary); }
+        .form-group input, .form-group textarea { width: 100%; padding: .75rem; border-radius: var(--border-radius-small); border: 1px solid var(--border-color); background-color: var(--bg-color); color: var(--text-color-primary); font-family: var(--font-family-sans-serif); }
+        #message { margin-top: 1rem; text-align: center; font-weight: bold; min-height: 1.2em; }
+    </style>
+</head>
+<body>
+
+    <!-- 核心修复：将同步脚本放在这里，并且不使用 defer -->
+    <script src="assets/js/theme-sync.js"></script>
+
+    <div class="auth-container">
+        <div class="auth-form">
+            <h2 class="text-center">发送新工单</h2>
+            <div class="form-group">
+                <label for="subject">主题</label>
+                <input type="text" id="subject" required placeholder="例如：关于网站的建议">
+            </div>
+            <div class="form-group">
+                <label for="message-content">内容</label>
+                <textarea id="message-content" rows="6" required placeholder="请在这里详细描述您的问题或建议..."></textarea>
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="sendTicket()">确认发送</button>
+            <p id="message"></p>
+            <p class="text-center" style="margin-top: 1rem; margin-bottom: 0;"><a href="index.html">返回主页</a></p>
+        </div>
+    </div>
+
+       <script>
+      (function() {
+        const theme = localStorage.getItem('theme');
+        if (theme === 'light' || (!theme && window.matchMedia('(prefers-color-scheme: light)').matches)) {
+          document.body.classList.add('light-mode');
+        }
+      })();
+    </script>
+
+    <script>
+        const userToken = localStorage.getItem('userToken');
+        if (!userToken) {
+            alert('请先登录后再访问此页面！');
+            window.location.href = 'login.html';
+        }
+
+        async function sendTicket() {
+            const subject = document.getElementById('subject').value;
+            const messageContent = document.getElementById('message-content').value;
+            const messageEl = document.getElementById('message');
+            
+            if (!subject || !messageContent) {
+                messageEl.style.color = 'red';
+                messageEl.textContent = '主题和内容不能为空！';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/tickets', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${userToken}`
+                    },
+                    body: JSON.stringify({ subject: subject, message: messageContent }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageEl.style.color = 'green';
+                    messageEl.textContent = data.message;
+                    document.getElementById('subject').value = '';
+                    document.getElementById('message-content').value = '';
+                } else {
+                    messageEl.style.color = 'red';
+                    messageEl.textContent = data.message || '发送失败，请重试。';
+                }
+            } catch (error) {
+                 messageEl.style.color = 'red';
+                messageEl.textContent = '请求失败，请检查服务器是否已启动。';
+            }
+        }
+    </script>
+</body>
+</html>

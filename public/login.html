@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>登录 - 我的博客</title>
+    <link href="assets/css/theme.css" rel="stylesheet" />
+    <link rel="icon" href="assets/img/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background-color: var(--bg-color); }
+        .auth-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+        .auth-form { background: var(--section-odd-bg); padding: 2rem; border-radius: var(--border-radius-main); width: 100%; max-width: 400px; box-shadow: var(--modern-shadow); }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; margin-bottom: .5rem; color: var(--text-color-primary); }
+        .form-group input { width: 100%; padding: .75rem; border-radius: var(--border-radius-small); border: 1px solid var(--border-color); background-color: var(--bg-color); color: var(--text-color-primary); transition: border-color 0.3s, box-shadow 0.3s; }
+        .form-group input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-glow); outline: none; }
+        #message { margin-top: 1rem; text-align: center; font-weight: bold; min-height: 1.2em; }
+    </style>
+</head>
+<body>
+
+    <!-- 核心修复：防闪烁主题同步脚本 -->
+    <!-- 这个脚本在页面渲染前执行，确保主题正确 -->
+    <script>
+      (function() {
+        const theme = localStorage.getItem('theme');
+        // 如果本地有保存的主题，或者没有保存但系统偏好浅色，则应用浅色模式
+        if (theme === 'light' || (!theme && window.matchMedia('(pre-fers-color-scheme: light)').matches)) {
+          // 注意：我们在 body 上添加类，因为所有 CSS 都是基于 body.light-mode
+          document.body.classList.add('light-mode');
+        }
+      })();
+    </script>
+
+    <div class="auth-container">
+        <div class="auth-form">
+            <h2 class="text-center">登录</h2>
+            <div class="form-group">
+                <label for="email">电子邮箱</label>
+                <input type="email" id="email" required>
+            </div>
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" required>
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="handleLogin()">登录</button>
+            <p id="message"></p>
+            <p class="text-center" style="margin-top: 1rem;">没有账户? <a href="register.html">创建一个</a></p>
+        </div>
+    </div>
+
+   <script>
+    // 登录处理函数
+    async function handleLogin() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const messageEl = document.getElementById('message');
+
+        try {
+            // 使用相对路径，确保在任何域名下都能正常工作
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                messageEl.style.color = 'green';
+                messageEl.textContent = data.message + ' 正在跳转到主页...';
+                // 登录成功，保存用户的 Token
+                localStorage.setItem('userToken', data.token);
+                setTimeout(() => { window.location.href = 'index.html'; }, 1500);
+            } else {
+                messageEl.style.color = 'red';
+                messageEl.textContent = data.message;
+            }
+        } catch (error) {
+            messageEl.style.color = 'red';
+            messageEl.textContent = '请求失败，请检查服务器是否已启动。';
+        }
+    }
+</script>
+
+</body>
+</html>

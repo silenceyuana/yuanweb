@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>后台管理面板</title>
+    <link href="assets/css/theme.css" rel="stylesheet" />
+    <script src="assets/js/theme-sync.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background-color: var(--bg-color); color: var(--text-color-primary); }
+        .dashboard-container { max-width: 1200px; margin: 2rem auto; padding: 2rem; }
+        .dashboard-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 2rem; }
+        h1, h2 { color: var(--text-color-primary); }
+        table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
+        th, td { padding: 1rem; border: 1px solid var(--border-color); text-align: left; vertical-align: middle; }
+        th { background-color: var(--section-odd-bg); }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; margin-right: 0.5rem; cursor: pointer; border-radius: var(--border-radius-small); }
+        .btn-danger { background-color: #dc3545; color: white; border: none; }
+        .btn-warning { background-color: #ffc107; color: black; border: none; }
+        .status-banned { color: #dc3545; font-weight: bold; }
+        .status-active { color: #28a745; font-weight: bold; }
+        .ticket-message { max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .container-loading { display: none; }
+        .container-authorized { display: block; }
+    </style>
+</head>
+
+ <script>
+      (function() {
+        const theme = localStorage.getItem('theme');
+        if (theme === 'light' || (!theme && window.matchMedia('(prefers-color-scheme: light)').matches)) {
+          document.body.classList.add('light-mode');
+        }
+      })();
+    </script>
+
+<body>
+    <div class="dashboard-container container-loading" id="dashboard-container">
+        <div class="dashboard-header">
+            <h1>管理面板</h1>
+            <button class="btn btn-sm btn-danger" onclick="logout()">退出登录</button>
+        </div>
+
+        <!-- 用户管理模块 -->
+        <h2>用户管理</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>邮箱</th>
+                    <th>等级</th>
+                    <th>角色</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="user-table-body">
+                <!-- JS动态填充 -->
+            </tbody>
+        </table>
+
+        <!-- 工单管理模块 -->
+        <h2 style="margin-top: 4rem;">工单管理</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>提交用户</th>
+                    <th>主题</th>
+                    <th>内容摘要</th>
+                    <th>状态</th>
+                    <th>提交时间</th>
+                </tr>
+            </thead>
+            <tbody id="ticket-table-body">
+                <!-- JS动态填充 -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // --- 1. 客户端路由守卫与初始化 ---
+        const token = localStorage.getItem('adminToken');
+        const dashboardContainer = document.getElementById('dashboard-container');
+
+        if (!token) {
+            window.location.href = '/admin'; 
+        } else {
+            dashboardContainer.classList.remove('container-loading');
+            dashboardContainer.classList.add('container-authorized');
+        }
+
+        // --- 2. DOM 元素引用 ---
+        const userTableBody = document.getElementById('user-table-body');
+        const ticketTableBody = document.getElementById('ticket-table-body');
+
+        // --- 3. 封装的 fetch 函数 ---
+        async function fetchWithAuth(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers,
+                },
+            };
+            try {
+                const response = await fetch(url, { ...options, ...defaultOptions });
+                if (response.status === 401 || response.status === 403) {
+                    alert('您的登录已过期或无效，请重新登录。');
+                    logout();
+                    return null;
+                }
+                return response;
+            } catch (error) {
+                alert('请求服务器失败！');
+                return null;
+            }
+        }
+
+        // --- 4. 核心渲染函数 ---
+        async function fetchAndRenderUsers() {
+            userTableBody.innerHTML = '<tr><td colspan="5">正在加载用户...</td></tr>';
+            const response = await fetchWithAuth('/api/admin/users');
+            if (!response) return;
+            const users = await response.json();
+            
+            userTableBody.innerHTML = '';
+            if (users.length === 0) {
+                 userTableBody.innerHTML = '<tr><td colspan="5">暂无用户</td></tr>';
+                return;
+            }
+            users.forEach(user => {
+                const row = document.createElement('tr');
+                const statusClass = user.isBanned ? 'status-banned' : 'status-active';
+                const statusText = user.isBanned ? '已封禁' : '正常';
+                const banButtonText = user.isBanned ? '解封' : '封禁';
+                row.innerHTML = `
+                    <td>${user.email}</td>
+                    <td>${user.level}</td>
+                    <td>${user.role}</td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-warning" onclick="toggleBan('${user.id}')">${banButtonText}</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteUser('${user.id}')">删除</button>
+                    </td>
+                `;
+                userTableBody.appendChild(row);
+            });
+        }
+
+        async function fetchAndRenderTickets() {
+            ticketTableBody.innerHTML = '<tr><td colspan="5">正在加载工单...</td></tr>';
+            const response = await fetchWithAuth('/api/admin/tickets');
+            if (!response) return;
+            const tickets = await response.json();
+
+            ticketTableBody.innerHTML = '';
+            if (tickets.length === 0) {
+                ticketTableBody.innerHTML = '<tr><td colspan="5">暂无工单</td></tr>';
+                return;
+            }
+            tickets.forEach(ticket => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${ticket.userEmail}</td>
+                    <td>${ticket.subject}</td>
+                    <td class="ticket-message" title="${ticket.message}">${ticket.message}</td>
+                    <td><span class="status-active">${ticket.status}</span></td>
+                    <td>${new Date(ticket.createdAt).toLocaleString('zh-CN')}</td>
+                `;
+                ticketTableBody.appendChild(row);
+            });
+        }
+        
+        // --- 5. 操作函数 ---
+        async function performAction(endpoint, method, confirmMessage) {
+            if (confirmMessage && !confirm(confirmMessage)) return;
+            const response = await fetchWithAuth(endpoint, { method });
+            if (response) {
+                const data = await response.json();
+                alert(data.message);
+                if (response.ok) {
+                    fetchAndRenderUsers(); // 操作用户后只刷新用户列表
+                }
+            }
+        }
+        function deleteUser(userId) {
+            performAction(`/api/admin/users/${userId}`, 'DELETE', '确定要永久删除该用户吗？');
+        }
+        function toggleBan(userId) {
+            performAction(`/api/admin/users/${userId}/toggle-ban`, 'POST');
+        }
+        function logout() {
+            localStorage.removeItem('adminToken');
+            window.location.href = '/admin';
+        }
+
+        // --- 6. 页面加载时执行 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            if (token) {
+                fetchAndRenderUsers();
+                fetchAndRenderTickets();
+            }
+        });
+    </script>
+    <script src="assets/js/main.js" defer></script>
+
+</body>
+</html>

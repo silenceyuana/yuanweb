@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>注册 - 我的博客</title>
+    <script src="assets/js/theme-sync.js"></script>
+    <link href="assets/css/theme.css" rel="stylesheet" />
+    <link rel="icon" href="assets/img/favicon.ico" />
+    <script src="assets/js/theme-sync.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        .auth-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .auth-form { background: var(--section-odd-bg); padding: 2rem; border-radius: var(--border-radius-main); width: 100%; max-width: 400px; box-shadow: var(--modern-shadow); }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; margin-bottom: .5rem; color: var(--text-color-primary); }
+        .form-group input { width: 100%; padding: .75rem; border-radius: var(--border-radius-small); border: 1px solid var(--border-color); background-color: var(--bg-color); color: var(--text-color-primary); }
+        #message { margin-top: 1rem; text-align: center; font-weight: bold; }
+    </style>
+</head>
+   <script>
+      (function() {
+        const theme = localStorage.getItem('theme');
+        if (theme === 'light' || (!theme && window.matchMedia('(prefers-color-scheme: light)').matches)) {
+          document.body.classList.add('light-mode');
+        }
+      })();
+    </script>
+<body>
+    <div class="auth-container">
+        <div class="auth-form">
+            <h2 class="text-center">创建账户</h2>
+            <div class="form-group">
+                <label for="email">电子邮箱</label>
+                <input type="email" id="email" required>
+            </div>
+            <div class="form-group">
+                <label for="password">密码 (至少6位)</label>
+                <input type="password" id="password" required>
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="handleRegister()">注册</button>
+            <p id="message"></p>
+            <p class="text-center" style="margin-top: 1rem;">已有账户? <a href="login.html">登录</a></p>
+        </div>
+    </div>
+
+    <script>
+        async function handleRegister() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const messageEl = document.getElementById('message');
+
+            try {
+                 const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageEl.style.color = 'green';
+                    messageEl.textContent = data.message + ' 正在跳转到登录页面...';
+                    setTimeout(() => { window.location.href = 'login.html'; }, 2000);
+                } else {
+                    messageEl.style.color = 'red';
+                    messageEl.textContent = data.message;
+                }
+            } catch (error) {
+                messageEl.style.color = 'red';
+                messageEl.textContent = '请求失败，请检查服务器是否已启动。';
+            }
+        }
+    </script>
+</body>
+</html>

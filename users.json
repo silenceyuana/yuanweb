@@ -1,0 +1,10 @@
+[
+  {
+    "id": "1",
+    "email": "yuan",
+    "password": "$2a$12$tAkD0X6pXHDBaIaBlroqce4PFM.t8L0RoGQkDnLGRU0BtR1X2nrb6",
+    "role": "admin",
+    "level": 99,
+    "isBanned": false
+  }
+]
