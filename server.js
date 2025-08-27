@@ -8,7 +8,6 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-// 引入 'pg' 模块，这是 Node.js 连接 PostgreSQL 数据库的官方驱动
 const { Pool } = require('pg');
 
 // ======================================================
@@ -16,43 +15,38 @@ const { Pool } = require('pg');
 // ======================================================
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET;
 
-// 启动前严格检查必要的环境变量，防止部署后出错
-if (!JWT_SECRET) {
-    console.error("严重错误: JWT_SECRET 环境变量未设置！程序即将退出。");
-    process.exit(1);
-}
-if (!process.env.DATABASE_URL) {
-    console.error("严重错误: DATABASE_URL 环境变量 (Supabase 连接字符串) 未设置！程序即将退出。");
+// 从环境变量中读取密钥和数据库连接信息
+const JWT_SECRET = process.env.JWT_SECRET;
+const DATABASE_URL = process.env.DATABASE_URL;
+// 新增：从环境变量中读取 Supabase 的公开密钥，用于安全地传递给前端
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+
+// 启动前严格检查所有必要的环境变量，防止部署后因配置缺失而出错
+if (!JWT_SECRET || !DATABASE_URL || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error("严重错误: 缺少必要的环境变量 (JWT_SECRET, DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY)！");
     process.exit(1);
 }
 
 // ======================================================
 // --- 3. 数据库连接 ---
 // ======================================================
-// 创建一个数据库连接池。
-// Vercel 的无服务器环境每次请求都可能是一个新的实例，
-// 连接池能高效地管理数据库连接，避免连接数耗尽。
+// 创建一个数据库连接池，高效管理与 Supabase 的连接
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: DATABASE_URL,
 });
 
 // ======================================================
 // --- 4. 中间件配置 ---
 // ======================================================
-
-// !!! 关键修复 !!!
-// 启用反向代理信任。Vercel 是一个反向代理，启用此项设置
-// 可以让 express-rate-limit 等中间件正确获取用户的真实 IP 地址，
-// 而不是 Vercel 服务器的 IP 地址。
+// 信任 Vercel 作为反向代理，以便 express-rate-limit 正确获取用户 IP
 app.set('trust proxy', 1);
 
-app.use(cors()); // 允许跨域请求
+app.use(cors()); // 允许所有来源的跨域请求
 app.use(express.json()); // 解析 JSON 格式的请求体
 
-// 这行代码在本地开发时用于提供 public 文件夹下的静态文件。
-// 在 Vercel 上，静态文件会由 Vercel 的 CDN 直接处理，但这行代码无害。
+// 在本地开发时，提供 public 文件夹下的静态文件服务
 app.use(express.static(path.join(__dirname, 'public')));
 
 // 为登录接口设置请求频率限制，防止暴力破解
@@ -67,20 +61,18 @@ const loginLimiter = rateLimit({
 // ======================================================
 // --- 5. 认证中间件 ---
 // ======================================================
-// 验证普通用户 Token
 const authenticateUser = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (token == null) return res.sendStatus(401); // 未授权
+    if (token == null) return res.sendStatus(401);
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403); // 禁止访问 (Token 无效或过期)
+        if (err) return res.sendStatus(403);
         req.user = user;
         next();
     });
 };
 
-// 验证管理员 Token
 const authenticateAdmin = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -96,11 +88,19 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ======================================================
-// --- 6. API 路由定义 (已完全迁移至 PostgreSQL) ---
+// --- 6. API 路由定义 ---
 // ======================================================
 
-// --- 用户账户 API ---
+// --- 新增：配置接口 ---
+// 这个接口的作用是安全地向前端传递公开的环境变量
+app.get('/api/config', (req, res) => {
+    res.json({
+        supabaseUrl: SUPABASE_URL,
+        supabaseAnonKey: SUPABASE_ANON_KEY,
+    });
+});
 
+// --- 用户账户 API ---
 app.post('/api/register', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password || password.length < 6) {
@@ -137,9 +137,9 @@ app.post('/api/login', loginLimiter, async (req, res) => {
         const token = jwt.sign(
             { id: user.id, email: user.email, role: user.role },
             JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
+            { expiresIn: '1h' }
         );
-        res.status(200).json({ message: '登录成功！', token });
+        res.status(200).json({ message: '登录成功！', token, user: { email: user.email, role: user.role } });
     } catch (error) {
         console.error('登录 API 出错:', error);
         res.status(500).json({ message: '服务器内部错误' });
@@ -147,7 +147,6 @@ app.post('/api/login', loginLimiter, async (req, res) => {
 });
 
 // --- 工单 (Tickets) API ---
-
 app.post('/api/tickets', authenticateUser, async (req, res) => {
     const { subject, message } = req.body;
     if (!subject || !message) {
@@ -158,30 +157,22 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     try {
         await pool.query(sql, [userId, userEmail, subject, message]);
         res.status(201).json({ message: '工单已成功发送！' });
-    } catch (error)
-    {
+    } catch (error) {
         console.error('创建工单 API 出错:', error);
         res.status(500).json({ message: '服务器错误，无法保存工单。' });
     }
 });
 
 // --- 管理员 (Admin) API ---
-
 app.post('/api/admin/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     try {
         const result = await pool.query('SELECT * FROM users WHERE email = $1 AND role = $2', [email, 'admin']);
         const user = result.rows[0];
-
         if (!user || !bcrypt.compareSync(password, user.password)) {
             return res.status(401).json({ message: '管理员凭证无效！' });
         }
-
-        const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role },
-            JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
-        );
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
         res.json({ message: '管理员登录成功！', token });
     } catch (error) {
         console.error('管理员登录 API 出错:', error);
@@ -191,7 +182,6 @@ app.post('/api/admin/login', loginLimiter, async (req, res) => {
 
 app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
     try {
-        // 查询时排除密码字段，更安全
         const result = await pool.query('SELECT id, email, role, level, "isBanned", "createdAt" FROM users ORDER BY "createdAt" DESC');
         res.json(result.rows);
     } catch (error) {
@@ -202,7 +192,7 @@ app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
 
 app.delete('/api/admin/users/:id', authenticateAdmin, async (req, res) => {
     const { id } = req.params;
-    if (req.user.id == id) { // 使用 '==' 进行类型转换比较，因为 id 可能为字符串
+    if (req.user.id == id) {
         return res.status(400).json({ message: '不能删除自己！' });
     }
     try {
@@ -223,11 +213,7 @@ app.post('/api/admin/users/:id/toggle-ban', authenticateAdmin, async (req, res) 
         return res.status(400).json({ message: '不能封禁自己！' });
     }
     try {
-        // 使用 "RETURNING" 子句可以一次性完成更新和查询，效率更高
-        const result = await pool.query(
-            'UPDATE users SET "isBanned" = NOT "isBanned" WHERE id = $1 RETURNING "isBanned"',
-            [id]
-        );
+        const result = await pool.query('UPDATE users SET "isBanned" = NOT "isBanned" WHERE id = $1 RETURNING "isBanned"', [id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ message: '用户未找到！' });
         }
@@ -252,18 +238,16 @@ app.get('/api/admin/tickets', authenticateAdmin, async (req, res) => {
 // ======================================================
 // --- 7. 页面路由与服务器启动 ---
 // ======================================================
-// 为 /admin 路径提供管理员登录页面
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
 });
 
-// 仅在本地开发环境中启动服务器监听。
-// 在 Vercel 上，Vercel 会自动处理请求的传入，不需要我们手动监听端口。
+// 在本地开发时启动服务器监听
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ 本地开发服务器已启动，正在监听所有网络地址的 ${PORT} 端口`);
+        console.log(`✅ 本地开发服务器已启动，正在监听 ${PORT} 端口`);
     });
 }
 
-// 导出 Express app 实例，这是 Vercel 部署所必需的。
+// 导出 Express app 实例，供 Vercel 部署使用
 module.exports = app;
