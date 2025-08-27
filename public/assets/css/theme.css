@@ -7,7 +7,7 @@
 :root {
   --bg-color: #0d1117; --section-odd-bg: #161b22; --card-bg: #0d1117; --text-color-primary: #f0f6fc; --text-color-secondary: #8b949e; --border-color: rgba(240, 246, 252, 0.1); --primary-color: #3b82f6; --primary-glow: rgba(59, 130, 246, 0.4); --navbar-bg-color: rgba(13, 17, 23, 0.7); --skills-bg-color: #34495e; --skills-hole-color: #34495e; --white: #ffffff;
 }
-body.light-mode {
+:root.light-mode {
   --bg-color: #f0f2f5; --section-odd-bg: #ffffff; --card-bg: #ffffff; --text-color-primary: #1c1e21; --text-color-secondary: #606770; --border-color: rgba(0, 0, 0, 0.1); --primary-color: #0056b3; --primary-glow: rgba(0, 86, 179, 0.3); --navbar-bg-color: rgba(255, 255, 255, 0.7); --skills-bg-color: #d6e2f0; --skills-hole-color: #d6e2f0;
 }
 :root {
@@ -113,8 +113,8 @@ section { padding: 6rem 0; transition: background-color 0.3s ease; }
 .slider .fa-moon { color: #8b949e; }
 input:checked + .slider { background-color: var(--primary-color); }
 input:checked + .slider:before { transform: translateX(26px); }
-body.light-mode .slider .fa-sun { color: #ffffff; }
-body.light-mode .slider .fa-moon { color: var(--text-color-primary); }
+:root.light-mode .slider .fa-sun { color: #ffffff; }
+:root.light-mode .slider .fa-moon { color: var(--text-color-primary); }
 
 /* ===============================================*/
 /*    9. 响应式设计 (Responsive Design)

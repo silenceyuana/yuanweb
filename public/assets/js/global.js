@@ -3,27 +3,26 @@
 
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- 模块一：主题切换器逻辑 ---
-    const themeCheckbox = document.getElementById('theme-checkbox');
-    if (themeCheckbox) {
-        // 根据 <html> 元素的 class 初始化切换器的状态
-        themeCheckbox.checked = document.documentElement.classList.contains('light-mode');
+// 在 global.js 的模块一中
+const themeCheckbox = document.getElementById('theme-checkbox');
+if (themeCheckbox) {
+    // 根据 <html> 元素的 class 初始化切换器的状态
+    themeCheckbox.checked = document.documentElement.classList.contains('light-mode');
 
-        // 为切换器添加事件监听
-        themeCheckbox.addEventListener('change', () => {
-            const newTheme = themeCheckbox.checked ? 'light' : 'dark';
-            // 1. 保存新主题到 localStorage
-            localStorage.setItem('theme', newTheme);
-            
-            // 2. 立即应用到当前页面，无需等待事件
-            if (newTheme === 'light') {
-                document.documentElement.classList.add('light-mode');
-            } else {
-                document.documentElement.classList.remove('light-mode');
-            }
-        });
-    }
-
+    // 添加切换事件
+    themeCheckbox.addEventListener('change', () => {
+        const newTheme = themeCheckbox.checked ? 'light' : 'dark';
+        // 1. 保存新主题到 localStorage
+        localStorage.setItem('theme', newTheme);
+        
+        // 2. 立即应用到当前页面的 <html> 元素
+        if (newTheme === 'light') {
+            document.documentElement.classList.add('light-mode');
+        } else {
+            document.documentElement.classList.remove('light-mode');
+        }
+    });
+}
 
     // --- 模块二：认证状态与导航栏UI管理 ---
     function parseJwt(token) {
