@@ -1,7 +1,14 @@
 // ======================================================
 // --- 1. 模块引入与配置 ---
 // ======================================================
-require('dotenv').config();
+
+// !!! 关键修复 !!!
+// 只在非生产环境（例如，您的本地电脑）中才加载 .env 文件。
+// Vercel 会通过它自己的系统注入环境变量，不需要 dotenv。
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
@@ -19,14 +26,14 @@ const PORT = process.env.PORT || 3000;
 // 从环境变量中读取密钥和数据库连接信息
 const JWT_SECRET = process.env.JWT_SECRET;
 const DATABASE_URL = process.env.DATABASE_URL;
-// 新增：从环境变量中读取 Supabase 的公开密钥，用于安全地传递给前端
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 // 启动前严格检查所有必要的环境变量，防止部署后因配置缺失而出错
 if (!JWT_SECRET || !DATABASE_URL || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.error("严重错误: 缺少必要的环境变量 (JWT_SECRET, DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY)！");
-    process.exit(1);
+    // 在无服务器环境中，抛出错误比 process.exit(1) 更能提供调试信息
+    throw new Error('Missing required environment variables');
 }
 
 // ======================================================
@@ -91,8 +98,8 @@ const authenticateAdmin = (req, res, next) => {
 // --- 6. API 路由定义 ---
 // ======================================================
 
-// --- 新增：配置接口 ---
-// 这个接口的作用是安全地向前端传递公开的环境变量
+// --- 配置接口 ---
+// 安全地向前端传递公开的环境变量
 app.get('/api/config', (req, res) => {
     res.json({
         supabaseUrl: SUPABASE_URL,
