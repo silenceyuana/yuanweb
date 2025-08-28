@@ -5,12 +5,16 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>聊天室 - YUAN</title>
-    <script src="assets/js/theme-sync.js"></script>
     <link rel="icon" href="assets/img/favicon.ico" />
+    
+    <!-- 1. 立即执行的主题同步脚本，防止页面闪烁 -->
+    <script src="assets/js/theme-sync.js"></script>
+
+    <!-- 2. CSS 文件 -->
     <link href="assets/css/theme.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- 聊天页面专属样式 -->
+    <!-- 3. 聊天页面专属样式 -->
     <style>
         body {
             display: flex;
@@ -31,6 +35,7 @@
             padding: 1rem;
             display: flex;
             flex-direction: column;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
         .sidebar h2 {
             font-size: 1.2rem;
@@ -48,6 +53,10 @@
             cursor: pointer;
             margin-bottom: 0.5rem;
             color: var(--text-color-secondary);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        .room-list li:hover {
+            background-color: rgba(128, 128, 128, 0.1);
         }
         .room-list li.active {
             background-color: var(--primary-color);
@@ -65,6 +74,7 @@
             border-bottom: 1px solid var(--border-color);
             color: var(--text-color-primary);
             font-weight: bold;
+            transition: border-color 0.3s ease;
         }
         .messages-container {
             flex-grow: 1;
@@ -73,6 +83,11 @@
         }
         .message-group {
             margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+        .message-group.own-message {
+            align-items: flex-end;
         }
         .message-sender {
             font-weight: bold;
@@ -87,6 +102,11 @@
             display: inline-block;
             max-width: 80%;
             color: var(--text-color-primary);
+            word-wrap: break-word;
+        }
+        .message-group.own-message .message-content {
+            background-color: var(--primary-color);
+            color: var(--white);
         }
         .message-input-area {
             padding: 1rem 1.5rem;
@@ -94,6 +114,7 @@
             background-color: var(--section-odd-bg);
             display: flex;
             align-items: center;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
         .message-input-area input {
             flex-grow: 1;
@@ -111,18 +132,34 @@
             font-size: 1.5rem;
             cursor: pointer;
         }
+        .message-input-area button:disabled {
+            color: var(--text-color-secondary);
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
-    <!-- 引入并执行主题同步脚本，确保页面加载时主题正确 -->
-    <script src="assets/js/theme-sync.js"></script>
-
-    <!-- 导航栏 (与主页保持一致) -->
+    
+    <!-- 导航栏 (与主页保持一致, 包含登录/用户下拉菜单和主题切换器) -->
     <nav class="navbar">
         <div class="container navbar-content">
             <a class="navbar-brand h1" href="index.html">YUAN</a>
-            <!-- 其他导航栏元素可以从 index.html 复制过来 -->
-            <a href="index.html" class="btn btn-sm btn-outline-primary">返回主页</a>
+            <div class="nav-items" id="nav-items" style="display: flex;"> <!-- 强制显示以简化 -->
+                <a href="index.html" class="btn btn-sm btn-outline-primary">返回主页</a>
+                <div class="user-dropdown" id="user-dropdown" style="display: none;">
+                    <button class="user-dropdown-toggle" id="user-dropdown-toggle">
+                        <i class="fas fa-user-circle"></i>
+                        <span id="user-email"></span>
+                    </button>
+                    <div class="dropdown-menu" id="dropdown-menu">
+                        <a href="#" class="dropdown-item" id="logout-button">退出登录</a>
+                    </div>
+                </div>
+                <label class="theme-switch" for="theme-checkbox" title="切换深浅模式">
+                    <input type="checkbox" id="theme-checkbox" />
+                    <div class="slider"><i class="fas fa-sun"></i><i class="fas fa-moon"></i></div>
+                </label>
+            </div>
         </div>
     </nav>
 
@@ -133,18 +170,15 @@
             <h2>聊天室</h2>
             <ul class="room-list" id="room-list">
                 <li class="active" data-room="general"># 综合频道</li>
-                <li data-room="tech"># 技术交流</li>
-                <li data-room="random"># 休闲闲聊</li>
+                
             </ul>
         </aside>
 
         <!-- 中间：聊天窗口 -->
         <main class="chat-area">
-            <header class="chat-header" id="chat-header">
-                # 综合频道
-            </header>
+            <header class="chat-header" id="chat-header"># 综合频道</header>
             <div class="messages-container" id="messages-container">
-                <!-- 消息会动态插入到这里 -->
+                <p style="text-align: center; color: var(--text-color-secondary);">正在连接到聊天室...</p>
             </div>
             <div class="message-input-area">
                 <input type="text" id="message-input" placeholder="输入消息，按 Enter 发送...">
@@ -153,25 +187,24 @@
         </main>
     </div>
 
-    <!-- 引入 Supabase 客户端库 -->
+    <!-- 4. 引入 Supabase 客户端库 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-    <!-- 聊天核心逻辑脚本 -->
+    <!-- 5. 引入全局交互脚本 (处理导航栏、主题等) -->
+    <script src="assets/js/global.js" defer></script>
+
+    <!-- 6. 聊天核心逻辑脚本 -->
     <script>
+        // --- 辅助函数 ---
+        function parseJwt(token) {
+            try { return JSON.parse(atob(token.split('.')[1])); } catch (e) { return null; }
+        }
+
         // --- 0. 认证检查 ---
         const userToken = localStorage.getItem('userToken');
         if (!userToken) {
             alert('请先登录后再访问聊天室！');
             window.location.href = 'login.html';
-        }
-        
-        // 解析 JWT 以获取用户信息
-        function parseJwt(token) {
-            try {
-                return JSON.parse(atob(token.split('.')[1]));
-            } catch (e) {
-                return null;
-            }
         }
         const currentUser = parseJwt(userToken);
         if (!currentUser || !currentUser.email) {
@@ -180,69 +213,59 @@
             window.location.href = 'login.html';
         }
 
-        // --- 1. Supabase 初始化 ---
-        // !! 重要：请在 Vercel 的环境变量中设置这两个值，然后通过某种方式安全地暴露给前端
-        // 例如，创建一个 /api/config 接口来返回 ANNON_KEY
-        const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co'; // 替换为您的 Supabase URL
-        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // 替换为您的 Supabase Anon Key
-
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        
-        // --- 2. 元素获取与状态管理 ---
+        // --- 1. 元素获取与状态管理 ---
         const roomListEl = document.getElementById('room-list');
         const chatHeaderEl = document.getElementById('chat-header');
         const messagesContainerEl = document.getElementById('messages-container');
         const messageInputEl = document.getElementById('message-input');
         const sendButtonEl = document.getElementById('send-button');
 
+        let supabase;
         let currentRoom = 'general';
         let realtimeChannel;
 
-        // --- 3. 核心功能函数 ---
-
-        // 加载历史消息
+        // --- 2. 核心功能函数 ---
         async function loadMessages(room) {
-            messagesContainerEl.innerHTML = '正在加载消息...';
-            const { data, error } = await supabase
-                .from('messages')
-                .select('*')
-                .eq('room', room)
-                .order('createdAt', { ascending: true });
-
+            messagesContainerEl.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">正在加载历史消息...</p>';
+            const { data, error } = await supabase.from('messages').select('*').eq('room', room).order('createdAt', { ascending: true });
             if (error) {
                 console.error('加载历史消息失败:', error);
                 messagesContainerEl.innerHTML = '<p>加载消息失败。</p>';
                 return;
             }
-
             messagesContainerEl.innerHTML = '';
             data.forEach(addMessageToUI);
             scrollToBottom();
         }
 
-        // 发送新消息
         async function sendMessage() {
             const content = messageInputEl.value.trim();
-            if (!content) return;
+            if (!content || !supabase) return;
 
+            sendButtonEl.disabled = true; // 防止重复发送
             const { error } = await supabase.from('messages').insert({
                 room: currentRoom,
                 content: content,
                 userEmail: currentUser.email
             });
+            sendButtonEl.disabled = false; // 恢复按钮
 
             if (error) {
                 console.error('发送消息失败:', error);
                 alert('消息发送失败，请重试。');
             } else {
                 messageInputEl.value = '';
+                messageInputEl.focus();
             }
         }
 
-        // 将消息添加到界面
         function addMessageToUI(message) {
             const messageGroup = document.createElement('div');
             messageGroup.className = 'message-group';
+            // 判断是否是自己发送的消息
+            if (message.userEmail === currentUser.email) {
+                messageGroup.classList.add('own-message');
+            }
 
             const sender = document.createElement('div');
             sender.className = 'message-sender';
@@ -256,76 +279,66 @@
             messageGroup.appendChild(content);
             messagesContainerEl.appendChild(messageGroup);
         }
-        
-        // 滚动到底部
+
         function scrollToBottom() {
             messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
         }
 
-        // 切换房间
         function switchRoom(newRoom) {
-            if (currentRoom === newRoom) return;
-            
-            // 取消订阅旧房间
-            if (realtimeChannel) {
-                supabase.removeChannel(realtimeChannel);
-            }
-
+            if (currentRoom === newRoom || !supabase) return;
+            if (realtimeChannel) { supabase.removeChannel(realtimeChannel); }
             currentRoom = newRoom;
-
-            // 更新UI
             document.querySelector('.room-list li.active').classList.remove('active');
             document.querySelector(`.room-list li[data-room="${newRoom}"]`).classList.add('active');
-            chatHeaderEl.textContent = `# ${newRoom}`;
-
-            // 加载新房间的消息并开始监听
+            chatHeaderEl.textContent = `# ${newRoom.charAt(0).toUpperCase() + newRoom.slice(1)}`;
             loadMessages(currentRoom);
             listenForNewMessages();
         }
 
-        // 监听新消息
         function listenForNewMessages() {
             realtimeChannel = supabase.channel(`room:${currentRoom}`)
-              .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'messages', filter: `room=eq.${currentRoom}` },
-                (payload) => {
-                  addMessageToUI(payload.new);
-                  scrollToBottom();
-                }
-              )
-              .subscribe();
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room=eq.${currentRoom}` }, (payload) => {
+                    // 避免收到自己发送的消息的回声
+                    if (payload.new.userEmail !== currentUser.email) {
+                        addMessageToUI(payload.new);
+                        scrollToBottom();
+                    }
+                }).subscribe();
         }
 
-        // --- 4. 事件监听 ---
+        // --- 3. 初始化函数 ---
+        async function initializeChat() {
+            try {
+                const response = await fetch('/api/config');
+                if (!response.ok) throw new Error('无法获取配置');
+                const config = await response.json();
+                
+                supabase = supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
 
-        // 点击发送按钮
-        sendButtonEl.addEventListener('click', sendMessage);
+                // 绑定事件
+                sendButtonEl.addEventListener('click', sendMessage);
+                messageInputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+                roomListEl.addEventListener('click', (e) => {
+                    if (e.target && e.target.tagName === 'LI') {
+                        const newRoom = e.target.dataset.room;
+                        if (newRoom) switchRoom(newRoom);
+                    }
+                });
 
-        // 按 Enter 键发送
-        messageInputEl.addEventListener('keypress', (event) => {
-            if (event.key === 'Enter') {
-                sendMessage();
+                // 初始加载
+                await loadMessages(currentRoom);
+                listenForNewMessages();
+
+            } catch (error) {
+                console.error('聊天功能初始化失败:', error);
+                messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">聊天室加载失败，请刷新页面重试。</p>`;
             }
-        });
+        }
 
-        // 点击切换房间
-        roomListEl.addEventListener('click', (event) => {
-            if (event.target && event.target.tagName === 'LI') {
-                const newRoom = event.target.dataset.room;
-                if (newRoom) {
-                    switchRoom(newRoom);
-                }
-            }
-        });
-
-        // --- 5. 初始加载 ---
-        loadMessages(currentRoom);
-        listenForNewMessages();
-
-       
+        // --- 4. 启动！ ---
+        // 等待整个页面加载完毕后，再初始化聊天功能
+        document.addEventListener('DOMContentLoaded', initializeChat);
 
     </script>
-    <script src="assets/js/global.js" defer></script> 
 </body>
 </html>
