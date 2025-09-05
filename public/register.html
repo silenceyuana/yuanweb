@@ -2,65 +2,161 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>注册 - 我的博客</title>
-    <script src="assets/js/theme-sync.js"></script>
+    <title>创建新账户</title>
     <script src="assets/js/theme-sync.js"></script>
     <link href="assets/css/theme.css" rel="stylesheet" />
     <link rel="icon" href="assets/img/favicon.ico" />
-    <script src="assets/js/theme-sync.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <!-- 新增：引入 Cloudflare Turnstile 脚本 -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback" defer></script>
+    
     <style>
-        .auth-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .auth-form { background: var(--section-odd-bg); padding: 2rem; border-radius: var(--border-radius-main); width: 100%; max-width: 400px; box-shadow: var(--modern-shadow); }
+        /* (这里的 CSS 样式和上一版相同，无需改动) */
+        body { background-color: var(--bg-color); }
+        .auth-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+        .auth-form { background: var(--section-odd-bg); padding: 2.5rem; border-radius: var(--border-radius-main); width: 100%; max-width: 420px; box-shadow: var(--modern-shadow); }
         .form-group { margin-bottom: 1.5rem; }
-        .form-group label { display: block; margin-bottom: .5rem; color: var(--text-color-primary); }
+        .form-group label { display: block; margin-bottom: .5rem; color: var(--text-color-primary); font-weight: 600; }
         .form-group input { width: 100%; padding: .75rem; border-radius: var(--border-radius-small); border: 1px solid var(--border-color); background-color: var(--bg-color); color: var(--text-color-primary); }
-        #message { margin-top: 1rem; text-align: center; font-weight: bold; }
+        .input-group { display: flex; gap: 0.5rem; }
+        .input-group input { flex-grow: 1; }
+        .input-group .btn-sm { flex-shrink: 0; padding: .75rem; font-size: 0.9rem; }
+        .input-group .btn-sm:disabled { background-color: var(--text-color-secondary); border-color: var(--text-color-secondary); color: var(--bg-color); cursor: not-allowed; }
+        #message { margin-top: 1rem; text-align: center; font-weight: bold; min-height: 1.2em; }
     </style>
 </head>
-   <script>
-      (function() {
-        const theme = localStorage.getItem('theme');
-        if (theme === 'light' || (!theme && window.matchMedia('(prefers-color-scheme: light)').matches)) {
-          document.body.classList.add('light-mode');
-        }
-      })();
-    </script>
 <body>
     <div class="auth-container">
         <div class="auth-form">
             <h2 class="text-center">创建账户</h2>
+
+            <!-- 表单字段 (与上一版相同) -->
             <div class="form-group">
                 <label for="email">电子邮箱</label>
-                <input type="email" id="email" required>
+                <input type="email" id="email" required placeholder="用于接收验证码">
             </div>
             <div class="form-group">
-                <label for="password">密码 (至少6位)</label>
+                <label for="code">邮箱验证码</label>
+                <div class="input-group">
+                    <input type="text" id="code" required placeholder="6位数字">
+                    <button class="btn btn-sm btn-outline-primary" id="send-code-btn" onclick="sendVerificationCode()">发送验证码</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="password">设置密码 (至少6位)</label>
                 <input type="password" id="password" required>
             </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="handleRegister()">注册</button>
+            <div class="form-group">
+                <label for="confirm-password">确认密码</label>
+                <input type="password" id="confirm-password" required>
+            </div>
+
+            <!-- 新增：Cloudflare Turnstile 小组件的占位符 -->
+            <div class="form-group" id="turnstile-container">
+                <div id="turnstile-widget"></div>
+            </div>
+            
+            <button class="btn btn-primary" style="width: 100%;" onclick="handleRegister()">立即注册</button>
             <p id="message"></p>
-            <p class="text-center" style="margin-top: 1rem;">已有账户? <a href="login.html">登录</a></p>
+            <p class="text-center" style="margin-top: 1rem;">已有账户? <a href="login.html">直接登录</a></p>
         </div>
     </div>
 
     <script>
-        async function handleRegister() {
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const messageEl = document.getElementById('message');
+        // --- Turnstile 脚本加载后的回调函数 ---
+        // 这个函数会在 Cloudflare 脚本加载完毕后自动执行
+        function onloadTurnstileCallback() {
+            turnstile.render('#turnstile-widget', {
+                // 粘贴你从 Cloudflare 获取的 Site Key
+                sitekey: 'YOUR_SITE_KEY_HERE', 
+                theme: document.documentElement.classList.contains('light-mode') ? 'light' : 'dark',
+            });
+        }
 
+        // --- 元素引用 ---
+        // (与上一版相同)
+        const emailEl = document.getElementById('email');
+        const codeEl = document.getElementById('code');
+        const passwordEl = document.getElementById('password');
+        const confirmPasswordEl = document.getElementById('confirm-password');
+        const sendCodeBtn = document.getElementById('send-code-btn');
+        const messageEl = document.getElementById('message');
+        
+        // --- 发送验证码函数 (与上一版相同) ---
+        async function sendVerificationCode() {
+            const email = emailEl.value.trim();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!email || !emailRegex.test(email)) {
+                messageEl.style.color = 'red';
+                messageEl.textContent = '请输入有效的邮箱地址！';
+                return;
+            }
+            sendCodeBtn.disabled = true;
+            let countdown = 60;
+            sendCodeBtn.textContent = `${countdown}秒后重试`;
+            const interval = setInterval(() => {
+                countdown--;
+                sendCodeBtn.textContent = `${countdown}秒后重试`;
+                if (countdown <= 0) {
+                    clearInterval(interval);
+                    sendCodeBtn.disabled = false;
+                    sendCodeBtn.textContent = '发送验证码';
+                }
+            }, 1000);
+            try {
+                const response = await fetch('/api/send-verification-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email }),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || '发送失败');
+                messageEl.style.color = 'green';
+                messageEl.textContent = data.message;
+            } catch (error) {
+                messageEl.style.color = 'red';
+                messageEl.textContent = error.message;
+                clearInterval(interval);
+                sendCodeBtn.disabled = false;
+                sendCodeBtn.textContent = '发送验证码';
+            }
+        }
+        
+        // --- 处理注册函数 (修改版) ---
+        async function handleRegister() {
+            // --- 1. 客户端数据校验 (与上一版相似) ---
+            const email = emailEl.value.trim();
+            const code = codeEl.value.trim();
+            const password = passwordEl.value;
+            const confirmPassword = confirmPasswordEl.value;
+            if (!email || !code || !password || !confirmPassword) {
+                messageEl.style.color = 'red';
+                messageEl.textContent = '所有字段均为必填项！';
+                return;
+            }
+            if (password !== confirmPassword) {
+                messageEl.style.color = 'red';
+                messageEl.textContent = '两次输入的密码不一致！';
+                return;
+            }
+            
+            // --- 2. 获取 Turnstile 令牌 ---
+            const turnstileToken = turnstile.getResponse();
+            if (!turnstileToken) {
+                messageEl.style.color = 'red';
+                messageEl.textContent = '请等待人机验证加载完成！';
+                return;
+            }
+
+            // --- 3. 发送请求到后端 (现在包含了 turnstileToken) ---
             try {
                  const response = await fetch('/api/register', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ email, password }),
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, code, turnstileToken }),
                 });
-
                 const data = await response.json();
-
                 if (response.ok) {
                     messageEl.style.color = 'green';
                     messageEl.textContent = data.message + ' 正在跳转到登录页面...';
@@ -68,10 +164,13 @@
                 } else {
                     messageEl.style.color = 'red';
                     messageEl.textContent = data.message;
+                    // 如果注册失败（例如验证码错误），重置 Turnstile 以便用户可以再次尝试
+                    turnstile.reset();
                 }
             } catch (error) {
                 messageEl.style.color = 'red';
-                messageEl.textContent = '请求失败，请检查服务器是否已启动。';
+                messageEl.textContent = '注册请求失败，请稍后重试。';
+                turnstile.reset();
             }
         }
     </script>
