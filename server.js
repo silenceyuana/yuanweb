@@ -2,7 +2,6 @@
 // --- 1. 模块引入与配置 ---
 // ======================================================
 
-// 关键！只在本地开发环境加载 .env 文件，Vercel会通过自己的系统注入环境变量
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -14,8 +13,8 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
-const axios = require('axios'); // 用于调用 Cloudflare API
-const { Resend } = require('resend'); // 用于发送邮件
+const axios = require('axios');
+const { Resend } = require('resend');
 
 // ======================================================
 // --- 2. 应用初始化与环境变量检查 ---
@@ -23,20 +22,12 @@ const { Resend } = require('resend'); // 用于发送邮件
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 从环境变量中安全地读取所有配置
 const {
-    DATABASE_URL,
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY,
-    JWT_SECRET,
-    PASSWORD_RESET_SECRET, // 新增：用于密码重置的独立密钥
-    BASE_URL,              // 新增：网站的基础 URL
-    TURNSTILE_SECRET_KEY,
-    RESEND_API_KEY,
-    MAIL_FROM_ADDRESS
+    DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, JWT_SECRET,
+    PASSWORD_RESET_SECRET, BASE_URL, TURNSTILE_SECRET_KEY, 
+    RESEND_API_KEY, MAIL_FROM_ADDRESS
 } = process.env;
 
-// 启动前严格检查所有必要的环境变量，防止部署后因配置缺失而出错
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
@@ -54,17 +45,9 @@ for (const varName of requiredEnvVars) {
 // --- 3. 第三方服务与数据库连接 ---
 // ======================================================
 
-// 创建数据库连接池
-const pool = new Pool({
-    connectionString: DATABASE_URL,
-});
-
-// 初始化 Resend 客户端
+const pool = new Pool({ connectionString: DATABASE_URL });
 const resend = new Resend(RESEND_API_KEY);
-
-// 用于在内存中临时存储验证码
-const verificationCodes = {}; 
-
+const verificationCodes = {};
 
 // ======================================================
 // --- 4. 中间件配置 ---
@@ -75,11 +58,9 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
+    windowMs: 15 * 60 * 1000, max: 5,
     message: { message: '登录尝试次数过多，请 15 分钟后再试！' },
-    standardHeaders: true,
-    legacyHeaders: false,
+    standardHeaders: true, legacyHeaders: false,
 });
 
 // ======================================================
@@ -89,7 +70,6 @@ const authenticateUser = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
-
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.sendStatus(403);
         req.user = user;
@@ -101,7 +81,6 @@ const authenticateAdmin = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
-
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err || user.role !== 'admin') {
             return res.status(403).json({ message: '需要管理员权限！' });
@@ -117,34 +96,29 @@ const authenticateAdmin = (req, res, next) => {
 
 // --- 配置接口 ---
 app.get('/api/config', (req, res) => {
-    res.json({
-        supabaseUrl: SUPABASE_URL,
-        supabaseAnonKey: SUPABASE_ANON_KEY,
-    });
+    res.json({ supabaseUrl: SUPABASE_URL, supabaseAnonKey: SUPABASE_ANON_KEY });
 });
 
 // --- 注册流程 API ---
-// ... (发送验证码和注册的 API 保持不变)
 app.post('/api/send-verification-code', async (req, res) => {
     const { email } = req.body;
-    if (!email) {
-        return res.status(400).json({ message: '邮箱不能为空！' });
-    }
+    if (!email) return res.status(400).json({ message: '邮箱不能为空！' });
+
     try {
         const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) {
-            return res.status(409).json({ message: '该邮箱已被注册！' });
-        }
+        if (existingUser.rows.length > 0) return res.status(409).json({ message: '该邮箱已被注册！' });
+        
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const expires = Date.now() + 5 * 60 * 1000;
-        verificationCodes[email] = { code, expires };
+        verificationCodes[email] = { code, expires: Date.now() + 5 * 60 * 1000 };
 
+        // ====> 使用精美邮件模板 <====
         await resend.emails.send({
-            from: `YUAN web <${MAIL_FROM_ADDRESS}>`,
+            from: `YUAN的网站 <${MAIL_FROM_ADDRESS}>`,
             to: [email],
             subject: '您的注册验证码',
-            html: `<div style="font-family: Arial, sans-serif; line-height: 1.6;"><h2>欢迎注册！</h2><p>您的验证码是：</p><p style="font-size: 28px; font-weight: bold; color: #3b82f6; letter-spacing: 2px;">${code}</p><p>该验证码将在5分钟内失效，请勿泄露给他人。</p></div>`,
+            html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>您的验证码</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">欢迎注册！</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">您的验证码是：</p><div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin: 30px 0; text-align: center;"><p style="font-size: 36px; font-weight: bold; color: #0d6efd; letter-spacing: 5px; margin: 0;">${code}</p></div><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">该验证码将在5分钟内失效，请勿泄露给他人。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
         });
+        
         res.status(200).json({ message: '验证码已成功发送到您的邮箱！' });
     } catch (error) {
         console.error('发送验证码 API 出错:', error);
@@ -153,9 +127,10 @@ app.post('/api/send-verification-code', async (req, res) => {
 });
 
 app.post('/api/register', async (req, res) => {
+    // ... (注册逻辑保持不变)
     const { email, password, code, turnstileToken } = req.body;
     if (!turnstileToken) {
-        return res.status(400).json({ message: '我们无法识别你是个人' });
+        return res.status(400).json({ message: '人机验证失败，请刷新重试。' });
     }
     try {
         const response = await axios.post(
@@ -193,8 +168,8 @@ app.post('/api/register', async (req, res) => {
 });
 
 // --- 用户账户与密码重置 API ---
-
 app.post('/api/login', loginLimiter, async (req, res) => {
+    // ... (登录逻辑保持不变)
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: '邮箱和密码不能为空！' });
     try {
@@ -214,35 +189,27 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     }
 });
 
-// 1. 请求密码重置链接 (忘记密码)
 app.post('/api/forgot-password', async (req, res) => {
     const { email } = req.body;
     const genericMessage = { message: '如果该邮箱已注册，您将会收到一封密码重置邮件。' };
-    
-    if (!email) {
-        return res.status(400).json({ message: '请输入您的邮箱地址。' });
-    }
+    if (!email) return res.status(400).json({ message: '请输入您的邮箱地址。' });
 
     try {
         const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         const user = result.rows[0];
 
         if (user) {
-            const passwordResetToken = jwt.sign(
-                { id: user.id, email: user.email },
-                PASSWORD_RESET_SECRET,
-                { expiresIn: '15m' }
-            );
+            const passwordResetToken = jwt.sign({ id: user.id, email: user.email }, PASSWORD_RESET_SECRET, { expiresIn: '15m' });
             const resetLink = `${BASE_URL}/reset-password.html?token=${passwordResetToken}`;
             
+            // ====> 为密码重置邮件也使用精美模板 <====
             await resend.emails.send({
-                from: `YUAN web <${MAIL_FROM_ADDRESS}>`,
+                from: `YUAN的网站 <${MAIL_FROM_ADDRESS}>`,
                 to: [email],
                 subject: '重置您的账户密码',
-                html: `<div style="font-family: Arial, sans-serif; line-height: 1.6;"><h2>密码重置请求</h2><p>我们收到了一个重置您账户密码的请求。请点击下方的链接来设置您的新密码：</p><p style="margin: 20px 0;"><a href="${resetLink}" style="background-color: #3b82f6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px;">重置密码</a></p><p>此链接将在 <strong>15 分钟</strong> 内失效。如果您没有请求重置密码，请忽略此邮件。</p></div>`,
+                html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>重置您的密码</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">密码重置请求</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">我们收到了一个重置您账户密码的请求。请点击下方的按钮来设置您的新密码：</p><div style="text-align: center; margin: 30px 0;"><a href="${resetLink}" style="background-color: #0d6efd; color: white; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">重置密码</a></div><p style="font-size: 14px; color: #606770; text-align: center; line-height: 1.6;">此链接将在 <strong>15 分钟</strong> 内失效。如果您没有请求重置密码，请忽略此邮件。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
             });
         }
-        // 无论用户是否存在，都返回通用成功信息，防止用户枚举攻击
         res.status(200).json(genericMessage);
     } catch (error) {
         console.error('忘记密码 API 出错:', error);
@@ -250,8 +217,8 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 });
 
-// 2. 执行密码重置
 app.post('/api/reset-password', async (req, res) => {
+    // ... (重置密码逻辑保持不变)
     const { token, newPassword } = req.body;
     if (!token || !newPassword || newPassword.length < 6) {
         return res.status(400).json({ message: '缺少必要信息，或新密码格式不正确（至少6位）。' });
