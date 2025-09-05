@@ -140,7 +140,7 @@ app.post('/api/send-verification-code', async (req, res) => {
         verificationCodes[email] = { code, expires };
 
         await resend.emails.send({
-            from: `YUAN的网站 <${MAIL_FROM_ADDRESS}>`,
+            from: `YUAN web <${MAIL_FROM_ADDRESS}>`,
             to: [email],
             subject: '您的注册验证码',
             html: `<div style="font-family: Arial, sans-serif; line-height: 1.6;"><h2>欢迎注册！</h2><p>您的验证码是：</p><p style="font-size: 28px; font-weight: bold; color: #3b82f6; letter-spacing: 2px;">${code}</p><p>该验证码将在5分钟内失效，请勿泄露给他人。</p></div>`,
@@ -155,7 +155,7 @@ app.post('/api/send-verification-code', async (req, res) => {
 app.post('/api/register', async (req, res) => {
     const { email, password, code, turnstileToken } = req.body;
     if (!turnstileToken) {
-        return res.status(400).json({ message: '人机验证失败，请刷新重试。' });
+        return res.status(400).json({ message: '我们无法识别你是个人' });
     }
     try {
         const response = await axios.post(
@@ -236,7 +236,7 @@ app.post('/api/forgot-password', async (req, res) => {
             const resetLink = `${BASE_URL}/reset-password.html?token=${passwordResetToken}`;
             
             await resend.emails.send({
-                from: `YUAN的网站 <${MAIL_FROM_ADDRESS}>`,
+                from: `YUAN web <${MAIL_FROM_ADDRESS}>`,
                 to: [email],
                 subject: '重置您的账户密码',
                 html: `<div style="font-family: Arial, sans-serif; line-height: 1.6;"><h2>密码重置请求</h2><p>我们收到了一个重置您账户密码的请求。请点击下方的链接来设置您的新密码：</p><p style="margin: 20px 0;"><a href="${resetLink}" style="background-color: #3b82f6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px;">重置密码</a></p><p>此链接将在 <strong>15 分钟</strong> 内失效。如果您没有请求重置密码，请忽略此邮件。</p></div>`,
