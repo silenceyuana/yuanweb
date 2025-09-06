@@ -186,14 +186,14 @@
         </main>
     </div>
 
-    <!-- 4. 引入 Firebase 客户端库 -->
+     <!-- 4. 引入 Firebase 客户端库 -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
     <!-- 5. 引入全局交互脚本 -->
     <script src="assets/js/global.js" defer></script>
 
-    <!-- 6. 聊天核心逻辑脚本 -->
+    <!-- 6. 聊天核心逻辑脚本 (安全最终版) -->
     <script>
         // --- 辅助函数 ---
         function parseJwt(token) {
@@ -217,27 +217,14 @@
         const messagesContainerEl = document.getElementById('messages-container');
         const messageInputEl = document.getElementById('message-input');
         const sendButtonEl = document.getElementById('send-button');
-        let db;
+        let db; // Firestore 数据库实例
 
-        // --- 2. Firebase 配置 (已填入您的信息) ---
-        const firebaseConfig = {
-          apiKey: "AIzaSyC_sV38-wUhGRfNMNyRdU2FZwethpw_Yk4",
-          authDomain: "yuanweb-21b2f.firebaseapp.com",
-          databaseURL: "https://yuanweb-21b2f-default-rtdb.asia-southeast1.firebasedatabase.app",
-          projectId: "yuanweb-21b2f",
-          storageBucket: "yuanweb-21b2f.appspot.com",
-          messagingSenderId: "207869487042",
-          appId: "1:207869487042:web:43dba294836c4b4ef0985b",
-          measurementId: "G-MEF66G7WJE"
-        };
-
-        // --- 3. 核心功能函数 ---
+        // --- 2. 核心功能函数 (保持不变) ---
         async function sendMessage() {
             const content = messageInputEl.value.trim();
             if (!content) return;
             sendButtonEl.disabled = true;
             try {
-                // 注意：在这里我们仍然需要使用 authenticateUser 中间件，所以需要传递 token
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
@@ -273,7 +260,7 @@
             messagesContainerEl.scrollTo({ top: messagesContainerEl.scrollHeight, behavior: 'smooth' });
         }
 
-        // --- 4. 监听实时消息 ---
+        // --- 3. 监听实时消息 (保持不变) ---
         function listenForNewMessages() {
             if (!db) return;
             const messagesRef = db.collection('messages');
@@ -287,14 +274,26 @@
             });
         }
         
-        // --- 5. 初始化函数 ---
-        function initializeChat() {
+        // --- 4. 初始化函数 (这是修改的核心) ---
+        async function initializeChat() {
             try {
-                // 使用上面填写的配置初始化 Firebase
-                firebase.initializeApp(firebaseConfig);
+                // 从我们自己的后端 /api/config 获取 Firebase 配置
+                const response = await fetch('/api/config');
+                if (!response.ok) {
+                    throw new Error(`无法获取配置: ${response.status}`);
+                }
+                const configData = await response.json();
+
+                // 检查配置是否存在且有效
+                if (!configData || !configData.firebaseConfig || !configData.firebaseConfig.apiKey) {
+                    throw new Error('从服务器收到的 Firebase 配置不完整或无效。');
+                }
+                
+                // 使用从后端获取的配置来初始化 Firebase
+                firebase.initializeApp(configData.firebaseConfig);
                 db = firebase.firestore();
 
-                // 绑定事件
+                // 绑定事件监听器
                 sendButtonEl.addEventListener('click', sendMessage);
                 messageInputEl.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
@@ -306,7 +305,7 @@
                 // 启用输入框和按钮
                 messageInputEl.disabled = false;
                 sendButtonEl.disabled = false;
-                messagesContainerEl.innerHTML = ''; // 清空 "正在连接" 提示
+                messagesContainerEl.innerHTML = ''; // 清空"正在连接"的提示
 
                 // 开始监听实时消息
                 listenForNewMessages();
@@ -317,7 +316,7 @@
             }
         }
 
-        // --- 6. 启动！ ---
+        // --- 5. 启动！ ---
         document.addEventListener('DOMContentLoaded', initializeChat);
     </script>
 </body>
