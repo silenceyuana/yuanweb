@@ -140,7 +140,7 @@
 </head>
 <body>
     
-    <!-- 导航栏 (与主页保持一致) -->
+    <!-- 导航栏 -->
     <nav class="navbar">
         <div class="container navbar-content">
             <a class="navbar-brand h1" href="index.html">YUAN</a>
@@ -165,7 +165,7 @@
 
     <!-- 主聊天区域 -->
     <div class="main-chat-container">
-        <!-- 左侧边栏：聊天室列表 -->
+        <!-- 左侧边栏 -->
         <aside class="sidebar">
             <h2>聊天室</h2>
             <ul class="room-list" id="room-list">
@@ -173,7 +173,7 @@
             </ul>
         </aside>
 
-        <!-- 中间：聊天窗口 -->
+        <!-- 聊天窗口 -->
         <main class="chat-area">
             <header class="chat-header" id="chat-header"># 综合频道</header>
             <div class="messages-container" id="messages-container">
@@ -186,22 +186,18 @@
         </main>
     </div>
 
-    <!-- 4. 引入 Firebase 客户端库 (替换 Supabase) -->
+    <!-- 4. 引入 Firebase 客户端库 -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
-    <!-- 5. 引入全局交互脚本 (处理导航栏、主题等) -->
+    <!-- 5. 引入全局交互脚本 -->
     <script src="assets/js/global.js" defer></script>
 
-    <!-- 6. 聊天核心逻辑脚本 (新版) -->
+    <!-- 6. 聊天核心逻辑脚本 -->
     <script>
         // --- 辅助函数 ---
         function parseJwt(token) {
-            try {
-                return JSON.parse(atob(token.split('.')[1]));
-            } catch (e) {
-                return null;
-            }
+            try { return JSON.parse(atob(token.split('.')[1])); } catch (e) { return null; }
         }
 
         // --- 0. 认证检查 ---
@@ -217,36 +213,38 @@
             window.location.href = 'login.html';
         }
 
-        // --- 1. 元素获取与状态管理 ---
+        // --- 1. 元素获取 ---
         const messagesContainerEl = document.getElementById('messages-container');
         const messageInputEl = document.getElementById('message-input');
         const sendButtonEl = document.getElementById('send-button');
-        let db; // Firestore 数据库实例
+        let db;
 
-        // --- 2. 核心功能函数 ---
+        // --- 2. Firebase 配置 (已填入您的信息) ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyC_sV38-wUhGRfNMNyRdU2FZwethpw_Yk4",
+          authDomain: "yuanweb-21b2f.firebaseapp.com",
+          databaseURL: "https://yuanweb-21b2f-default-rtdb.asia-southeast1.firebasedatabase.app",
+          projectId: "yuanweb-21b2f",
+          storageBucket: "yuanweb-21b2f.appspot.com",
+          messagingSenderId: "207869487042",
+          appId: "1:207869487042:web:43dba294836c4b4ef0985b",
+          measurementId: "G-MEF66G7WJE"
+        };
+
+        // --- 3. 核心功能函数 ---
         async function sendMessage() {
             const content = messageInputEl.value.trim();
             if (!content) return;
-
             sendButtonEl.disabled = true;
-
             try {
-                // 调用后端 API 来发送消息并触发清理
+                // 注意：在这里我们仍然需要使用 authenticateUser 中间件，所以需要传递 token
                 const response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userEmail: currentUser.email,
-                        content: content
-                    })
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+                    body: JSON.stringify({ userEmail: currentUser.email, content: content })
                 });
-
-                if (!response.ok) {
-                    throw new Error('服务器响应错误');
-                }
-                
+                if (!response.ok) throw new Error('发送失败');
                 messageInputEl.value = '';
-
             } catch (error) {
                 console.error('发送消息失败:', error);
                 alert('消息发送失败，请重试。');
@@ -259,58 +257,40 @@
         function addMessageToUI(message) {
             const messageGroup = document.createElement('div');
             messageGroup.className = 'message-group';
-            if (message.userEmail === currentUser.email) {
-                messageGroup.classList.add('own-message');
-            }
-
+            if (message.userEmail === currentUser.email) messageGroup.classList.add('own-message');
             const sender = document.createElement('div');
             sender.className = 'message-sender';
             sender.textContent = message.userEmail;
-
             const content = document.createElement('div');
             content.className = 'message-content';
             content.textContent = message.content;
-
             messageGroup.appendChild(sender);
             messageGroup.appendChild(content);
             messagesContainerEl.appendChild(messageGroup);
         }
 
         function scrollToBottom() {
-            // 平滑滚动到底部
             messagesContainerEl.scrollTo({ top: messagesContainerEl.scrollHeight, behavior: 'smooth' });
         }
 
-        // --- 3. 监听实时消息 ---
+        // --- 4. 监听实时消息 ---
         function listenForNewMessages() {
             if (!db) return;
-            
             const messagesRef = db.collection('messages');
-            
-            messagesRef.orderBy('createdAt', 'asc') // 按时间戳升序排列
-                .onSnapshot(querySnapshot => {
-                    messagesContainerEl.innerHTML = ''; // 每次更新都清空重绘
-                    querySnapshot.forEach(doc => {
-                        addMessageToUI(doc.data());
-                    });
-                    scrollToBottom();
-                }, error => {
-                    console.error("监听消息时出错: ", error);
-                    messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">与聊天室的连接已断开，请刷新页面。</p>`;
-                    messageInputEl.disabled = true;
-                    sendButtonEl.disabled = true;
-                });
+            messagesRef.orderBy('createdAt', 'asc').onSnapshot(querySnapshot => {
+                messagesContainerEl.innerHTML = '';
+                querySnapshot.forEach(doc => addMessageToUI(doc.data()));
+                scrollToBottom();
+            }, error => {
+                console.error("监听消息时出错: ", error);
+                messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">与聊天室的连接已断开，请刷新页面。</p>`;
+            });
         }
         
-        // --- 4. 初始化函数 ---
-        async function initializeChat() {
+        // --- 5. 初始化函数 ---
+        function initializeChat() {
             try {
-                // 从后端获取 Firebase 配置
-                const response = await fetch('/api/config');
-                if (!response.ok) throw new Error('无法获取 Firebase 配置');
-                const firebaseConfig = await response.json();
-                
-                // 初始化 Firebase 应用
+                // 使用上面填写的配置初始化 Firebase
                 firebase.initializeApp(firebaseConfig);
                 db = firebase.firestore();
 
@@ -318,7 +298,7 @@
                 sendButtonEl.addEventListener('click', sendMessage);
                 messageInputEl.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
-                        e.preventDefault(); // 防止回车换行
+                        e.preventDefault();
                         sendMessage();
                     }
                 });
@@ -326,6 +306,7 @@
                 // 启用输入框和按钮
                 messageInputEl.disabled = false;
                 sendButtonEl.disabled = false;
+                messagesContainerEl.innerHTML = ''; // 清空 "正在连接" 提示
 
                 // 开始监听实时消息
                 listenForNewMessages();
@@ -336,10 +317,8 @@
             }
         }
 
-        // --- 5. 启动！ ---
-        // 等待整个页面加载完毕后，再初始化聊天功能
+        // --- 6. 启动！ ---
         document.addEventListener('DOMContentLoaded', initializeChat);
-
     </script>
 </body>
 </html>
