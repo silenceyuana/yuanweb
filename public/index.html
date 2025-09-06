@@ -4,7 +4,12 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>yuan的个人主页</title>
+  
+
+  <title>Yuan的个人主页 | 创意开发者</title>
+  <meta name="description" content="欢迎来到Yuan的个人网站。我是一位对编程和创造充满热情的高中生，在这里分享我的项目与想法。">
+
+
   <script src="assets/js/theme-sync.js"></script>
   <link rel="icon" href="assets/img/favicon.ico" />
   <link href="assets/css/theme.css" rel="stylesheet" />
@@ -14,7 +19,7 @@
 
   <main class="main" id="top">
 
-    <!-- 导航栏 (结构已修复) -->
+
     <nav class="navbar fixed-top">
       <div class="container navbar-content">
         <a class="navbar-brand h1" href="index.html">YUAN</a>
@@ -26,15 +31,12 @@
         <div class="nav-items" id="nav-items">
           <ul>
             <li><a class="nav-link" href="#about">关于我</a></li>
-            <li><a class="nav-link" href="#skills">技能</a></li>
+            <li><a class="nav-link" href="#projects">我的作品</a></li>
             <li><a class="nav-link" href="#contact">联系我</a></li>
-            <li><a class="nav-link" href="chat.html">聊天室</a></li>
           </ul>
 
-          <!-- 未登录时显示的登录按钮 -->
           <a href="login.html" class="btn btn-sm btn-outline-primary" id="login-button">登录</a>
 
-          <!-- 登录后显示的用户下拉菜单 (结构与 auth.js 匹配) -->
           <div class="user-dropdown" id="user-dropdown" style="display: none;">
             <button class="user-dropdown-toggle" id="user-dropdown-toggle" aria-label="用户菜单">
               <i class="fas fa-user-circle"></i>
@@ -46,7 +48,6 @@
             </div>
           </div>
           
-          <!-- 滑块式主题切换器 -->
           <label class="theme-switch" for="theme-checkbox" title="切换深浅模式">
             <input type="checkbox" id="theme-checkbox" />
             <div class="slider">
@@ -58,56 +59,102 @@
       </div>
     </nav>
 
-    <!-- 英雄区/欢迎区 -->
+
     <section id="home">
       <div class="container text-center">
         <div class="hero-content">
-            <h1 class="display-1 fade-in-up">你好，我是 <span class="text-primary">源</span></h1>
-            <h3 class="mt-3 fade-in-up delay-1">一位充满热情的高中生</h3>
-            <p class="hero-subtitle mt-4 fade-in-up delay-2">专注于创造无用的东西。欢迎来到我的个人空间。</p>
+            <h1 class="display-1 fade-in-up">你好，我是 <span class="text-gradient">源</span></h1>
+            <h3 class="mt-3 fade-in-up delay-1">一位对创意编程充满热情的高中生</h3>
+            <p class="hero-subtitle mt-4 fade-in-up delay-2">热衷于将奇思妙想变为现实，欢迎来到我的数字创作空间。</p>
             <div class="mt-5 fade-in-up delay-3">
-              <a href="#contact" class="btn btn-outline-primary">联系我</a>
+              <a href="#projects" class="btn btn-primary">浏览我的作品</a>
+              <a href="#contact" class="btn btn-outline-primary" style="margin-left: 1rem;">联系我</a>
             </div>
         </div>
       </div>
     </section>
 
-    <!-- 关于我 -->
+
     <section id="about">
         <div class="container">
             <div class="row" style="align-items:center;">
-                <div class="col-lg-6">
-                    <img src="assets/img/favicon.ico" alt="你的照片" class="about-image">
+                <div class="col-lg-6 text-center">
+                    <img src="assets/img/favicon.ico" alt="Yuan的个人头像" class="about-image">
                 </div>
                 <div class="col-lg-6">
                     <h2 class="h2">关于我</h2>
-                    <p>一个新高一生，大部分都没时间，感谢您对我的理解与支持</p>
+                    <p>我是一名充满好奇心的高一新生，正行走在探索代码与设计世界的路上。我善于利用课余时间钻研技术、创造有趣的项目，并坚信代码是连接想象与现实的桥梁。</p>
+                    <p>无论是构建一个有趣的网页，还是探索一个新的算法，都让我无比兴奋。感谢你的来访，希望我的作品能给你带来启发！</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- 技能展示 -->
-    <section id="skills">
-      <div class="container text-center">
-        <h2 class="h2 mb-5">我掌握的编程语言</h2>
-        <div class="skills-chart-wrapper">
-            <div class="skills-donut-chart" role="img" aria-label="技能分布图：HTML 30%, Python 50%, Node.js 20%">
+
+    <section id="projects">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="h2">我的作品</h2>
+                <p class="section-subtitle">这里是我将想法付诸实践的一些尝试！</p>
             </div>
-            <ul class="chart-legend">
-                <li><span class="legend-color" style="background-color: #E44D26;"></span>HTML - 30%</li>
-                <li><span class="legend-color" style="background-color: #3572A5;"></span>Python - 50%</li>
-                <li><span class="legend-color" style="background-color: #68A063;"></span>Node.js - 20%</li>
-            </ul>
+            <div class="row">
+
+                <div class="col-lg-4">
+                    <div class="project-card">
+                        <div class="card-header">
+                            <i class="fas fa-gamepad card-icon"></i>
+                            <h3 class="card-title">项目一：eulark的mc服务器官网</h3>
+                        </div>
+                        <p class="card-description">第一个开发的网站，也算是在模板的基础上魔改的</p>
+                        <div class="card-footer">
+                            <span class="tech-tag">JavaScript</span>
+                            <span class="tech-tag">CSS</span>
+                            <span class="tech-tag">HTML</span>
+                            <a href="https://eulark.icu/" class="project-link" aria-label="查看项目一"> <i class="fas fa-arrow-right"></i> </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="project-card">
+                        <div class="card-header">
+                            <i class="fas fa-palette card-icon"></i>
+                            <h3 class="card-title">项目二：contega的mc服务器官网</h3>
+                        </div>
+                        <p class="card-description">一个响应式，第一个独立开发的官方网页，包含了注册，登录，签到系统</p>
+                        <div class="card-footer">
+                            <span class="tech-tag">JavaScript</span>
+                            <span class="tech-tag">CSS</span>
+                            <span class="tech-tag">HTML</span>
+                            <a href="https://www.contega.top" class="project-link" aria-label="查看项目二"> <i class="fas fa-arrow-right"></i> </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="project-card">
+                        <div class="card-header">
+                            <i class="fas fa-tools card-icon"></i>
+                            <h3 class="card-title">项目三：我的个人主页</h3>
+                        </div>
+                        <p class="card-description">所有的新技术功能都在这里测试和展示</p>
+                        <div class="card-footer">
+                            <span class="tech-tag">JavaScript</span>
+                            <span class="tech-tag">CSS</span>
+                            <span class="tech-tag">HTML</span>
+                            <a href="https://betteryuan.cn" class="project-link" aria-label="查看项目三"> <i class="fas fa-arrow-right"></i> </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
     </section>
 
-    <!-- 联系方式 -->
+
     <section id="contact">
         <div class="container text-center">
-            <h2 class="h2">与我联系</h2>
-            <p class="contact-subtitle mt-3">我正在寻找新的机会，我的收件箱随时为您敞开。无论您是想讨论一个项目，还是打个招呼，我都会尽快回复您！</p>
+            <h2 class="h2">与我联系(邮件一般情况不回，工单随缘)</h2>
+            <p class="contact-subtitle mt-3">我期待新的机会与合作。无论您是想讨论一个项目，还是单纯地打个招呼，我都会尽快回复！</p>
             
             <div class="mt-5">
               <a href="mailto:silenceyuan2018@gmail.com" class="btn btn-primary">发送邮件</a>
@@ -118,12 +165,19 @@
 
   </main>
 
+
   <footer class="main-footer">
-    <p>© 2025 Silence_yuan. 版权所有.</p>
+    <div class="container">
+      <div class="footer-content">
+        <div class="social-links">
+          <a href="https://github.com/silenceyuana" aria-label="我的GitHub"><i class="fab fa-github"></i></a>
+          <a href="mailto:silenceyuan2018@gmail.com" aria-label="我的邮箱"><i class="fas fa-envelope"></i></a>
+        </div>
+        <p>© 2025 Silence_yuan. 版权所有.</p>
+      </div>
+    </div>
   </footer>
 
-  <!-- 链接到外部 JavaScript 文件 (已清理) -->
-  
   <script src="assets/js/global.js" defer></script> 
 </body>
 </html>
