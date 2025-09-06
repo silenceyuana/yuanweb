@@ -2,12 +2,12 @@
 
 这是一个基于原生 HTML、CSS 和 JavaScript 构建的现代化、响应式的个人主页模板。它拥有简洁的设计、深色/浅色模式切换以及专门用于展示作品的区域，非常适合作为开发者的个人数字名片。
 
-**线上预览:** [https://<你的Vercel域名>.vercel.app/](https://<你的Vercel域名>.vercel.app/)
+**线上预览:** [https://www.betteryuan.cn/](https://www.betteryuan.cn/)
 
 [![在 Vercel 上部署](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2F<你的GitHub用户名>%2F<你的仓库名>)
 
 ![网站截图](./screenshot.png)
-*(提示: 建议你截一张自己网站的图片，命名为 `screenshot.png` 并放在项目根目录)*
+
 
 ---
 
@@ -36,7 +36,7 @@
 
 1.  **克隆仓库到本地**:
     ```bash
-    git clone https://github.com/<你的GitHub用户名>/<你的仓库名>.git
+    git clone https://github.com/silenceyuana/yuanweb.git
     ```
 
 2.  **进入项目目录**:
