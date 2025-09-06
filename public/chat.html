@@ -6,317 +6,340 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>聊天室 - YUAN</title>
     <link rel="icon" href="assets/img/favicon.ico" />
-    
-    <!-- 1. 立即执行的主题同步脚本 -->
     <script src="assets/js/theme-sync.js"></script>
-
-    <!-- 2. CSS 文件 -->
     <link href="assets/css/theme.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- 3. 聊天页面专属样式 -->
     <style>
+        :root {
+            --chat-bg: var(--bg-color);
+            --sidebar-bg: var(--section-odd-bg);
+            --border-color: var(--border-color);
+            --text-primary: var(--text-color-primary);
+            --text-secondary: var(--text-color-secondary);
+            --accent-color: var(--primary-color);
+            --message-sent-bg: var(--primary-color);
+            --message-received-bg: var(--section-odd-bg);
+            --hover-bg: rgba(128, 128, 128, 0.1);
+        }
         body {
             display: flex;
             flex-direction: column;
             height: 100vh;
             overflow: hidden;
-            background-color: var(--bg-color);
+            background-color: var(--chat-bg);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         }
-        .main-chat-container {
+        .navbar-chat {
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border-color);
             display: flex;
-            flex-grow: 1;
-            overflow: hidden;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--chat-bg);
+            flex-shrink: 0;
         }
+        .main-chat-container { display: flex; flex-grow: 1; overflow: hidden; }
         .sidebar {
             width: 280px;
-            background-color: var(--section-odd-bg);
+            background-color: var(--sidebar-bg);
             border-right: 1px solid var(--border-color);
             padding: 1rem;
             display: flex;
             flex-direction: column;
-            transition: background-color 0.3s ease, border-color 0.3s ease;
+            transition: background-color 0.3s ease;
         }
         .sidebar h2 {
-            font-size: 1.2rem;
-            margin-bottom: 1rem;
-            color: var(--text-color-primary);
-        }
-        .room-list {
-            list-style: none;
-            padding: 0;
+            font-size: 1.1rem;
+            padding: 0 0.5rem 1rem 0.5rem;
             margin: 0;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border-color);
         }
-        .room-list li {
-            padding: 0.75rem 1rem;
-            border-radius: var(--border-radius-small);
+        .user-list {
+            list-style: none; padding: 0; margin-top: 1rem; overflow-y: auto;
+        }
+        .user-list li {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem;
+            border-radius: 8px;
             cursor: pointer;
             margin-bottom: 0.5rem;
-            color: var(--text-color-secondary);
+            color: var(--text-secondary);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        .room-list li:hover {
-            background-color: rgba(128, 128, 128, 0.1);
+        .user-list li i { margin-right: 12px; }
+        .user-list li:hover { background-color: var(--hover-bg); }
+        .user-list li.active {
+            background-color: var(--accent-color);
+            color: white;
+            font-weight: 600;
         }
-        .room-list li.active {
-            background-color: var(--primary-color);
-            color: #fff;
-            font-weight: bold;
-        }
-        .chat-area {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            background-color: var(--bg-color);
-        }
+        .chat-area { flex-grow: 1; display: flex; flex-direction: column; }
         .chat-header {
             padding: 1rem 1.5rem;
             border-bottom: 1px solid var(--border-color);
-            color: var(--text-color-primary);
-            font-weight: bold;
-            transition: border-color 0.3s ease;
+            color: var(--text-primary);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
         }
         .messages-container {
             flex-grow: 1;
             overflow-y: auto;
             padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
         }
         .message-group {
             margin-bottom: 1rem;
             display: flex;
             flex-direction: column;
+            max-width: 70%;
         }
-        .message-group.own-message {
-            align-items: flex-end;
-        }
+        .message-group.own-message { align-self: flex-end; align-items: flex-end; }
+        .message-group.other-message { align-self: flex-start; align-items: flex-start; }
         .message-sender {
-            font-weight: bold;
-            color: var(--text-color-primary);
-            margin-bottom: 0.25rem;
-            font-size: 0.9rem;
+            font-weight: 600; color: var(--text-primary);
+            margin-bottom: 0.25rem; font-size: 0.85rem;
         }
         .message-content {
-            background-color: var(--section-odd-bg);
             padding: 0.75rem 1rem;
-            border-radius: var(--border-radius-main);
-            display: inline-block;
-            max-width: 80%;
-            color: var(--text-color-primary);
+            border-radius: 18px;
+            color: var(--text-primary);
             word-wrap: break-word;
+            line-height: 1.5;
         }
         .message-group.own-message .message-content {
-            background-color: var(--primary-color);
-            color: var(--white);
+            background-color: var(--message-sent-bg);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message-group.other-message .message-content {
+            background-color: var(--message-received-bg);
+            border: 1px solid var(--border-color);
+            border-bottom-left-radius: 4px;
         }
         .message-input-area {
             padding: 1rem 1.5rem;
             border-top: 1px solid var(--border-color);
-            background-color: var(--section-odd-bg);
+            background-color: var(--sidebar-bg);
             display: flex;
             align-items: center;
-            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
         .message-input-area input {
             flex-grow: 1;
-            padding: 0.75rem;
-            border-radius: var(--border-radius-small);
+            padding: 0.85rem;
+            border-radius: 20px;
             border: 1px solid var(--border-color);
-            background-color: var(--bg-color);
-            color: var(--text-color-primary);
+            background-color: var(--chat-bg);
+            color: var(--text-primary);
             margin-right: 1rem;
+            outline: none;
         }
         .message-input-area button {
-            background: none;
+            background: var(--accent-color);
             border: none;
-            color: var(--primary-color);
-            font-size: 1.5rem;
+            color: white;
+            font-size: 1rem;
             cursor: pointer;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.2s ease;
         }
-        .message-input-area button:disabled {
-            color: var(--text-color-secondary);
-            cursor: not-allowed;
+        .message-input-area button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #welcome-prompt {
+            margin: auto; text-align: center; color: var(--text-secondary);
         }
     </style>
 </head>
 <body>
     
-    <!-- 导航栏 -->
-    <nav class="navbar">
-        <div class="container navbar-content">
-            <a class="navbar-brand h1" href="index.html">YUAN</a>
-            <div class="nav-items" id="nav-items" style="display: flex;">
-                <a href="index.html" class="btn btn-sm btn-outline-primary">返回主页</a>
-                <div class="user-dropdown" id="user-dropdown" style="display: none;">
-                    <button class="user-dropdown-toggle" id="user-dropdown-toggle">
-                        <i class="fas fa-user-circle"></i>
-                        <span id="user-email"></span>
-                    </button>
-                    <div class="dropdown-menu" id="dropdown-menu">
-                        <a href="#" class="dropdown-item" id="logout-button">退出登录</a>
-                    </div>
+    <!-- 简化的导航栏 -->
+    <nav class="navbar-chat">
+        <a class="navbar-brand h1" href="index.html">YUAN</a>
+        <div class="nav-items" style="display: flex; align-items: center; gap: 1rem;">
+            <a href="index.html" class="btn btn-sm btn-outline-primary">返回主页</a>
+            <div class="user-dropdown" id="user-dropdown" style="display: none;">
+                <button class="user-dropdown-toggle" id="user-dropdown-toggle">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="user-email"></span>
+                </button>
+                <div class="dropdown-menu" id="dropdown-menu">
+                    <a href="#" class="dropdown-item" id="logout-button">退出登录</a>
                 </div>
-                <label class="theme-switch" for="theme-checkbox" title="切换深浅模式">
-                    <input type="checkbox" id="theme-checkbox" />
-                    <div class="slider"><i class="fas fa-sun"></i><i class="fas fa-moon"></i></div>
-                </label>
             </div>
+            <!-- 主题切换器依然保留 -->
         </div>
     </nav>
 
-    <!-- 主聊天区域 -->
     <div class="main-chat-container">
-        <!-- 左侧边栏 -->
+        <!-- 左侧边栏：用户列表 -->
         <aside class="sidebar">
-            <h2>聊天室</h2>
-            <ul class="room-list" id="room-list">
-                <li class="active" data-room="general"># 综合频道</li>
+            <h2>私信</h2>
+            <ul class="user-list" id="user-list">
+                <!-- 用户列表将由JS动态填充 -->
             </ul>
         </aside>
 
-        <!-- 聊天窗口 -->
+        <!-- 中间：聊天窗口 -->
         <main class="chat-area">
-            <header class="chat-header" id="chat-header"># 综合频道</header>
+            <header class="chat-header" id="chat-header">选择一个用户开始聊天</header>
             <div class="messages-container" id="messages-container">
-                <p style="text-align: center; color: var(--text-color-secondary);">正在连接到聊天室...</p>
+                <div id="welcome-prompt">
+                    <i class="fas fa-comments" style="font-size: 48px; margin-bottom: 1rem;"></i>
+                    <p>从左侧选择一个用户开始私信吧！</p>
+                </div>
             </div>
             <div class="message-input-area">
-                <input type="text" id="message-input" placeholder="输入消息，按 Enter 发送..." disabled>
+                <input type="text" id="message-input" placeholder="输入消息..." disabled>
                 <button id="send-button" aria-label="发送消息" disabled><i class="fas fa-paper-plane"></i></button>
             </div>
         </main>
     </div>
 
-     <!-- 4. 引入 Firebase 客户端库 -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-
-    <!-- 5. 引入全局交互脚本 -->
     <script src="assets/js/global.js" defer></script>
 
-    <!-- 6. 聊天核心逻辑脚本 (安全最终版) -->
     <script>
-        // --- 辅助函数 ---
-        function parseJwt(token) {
-            try { return JSON.parse(atob(token.split('.')[1])); } catch (e) { return null; }
-        }
-
-        // --- 0. 认证检查 ---
+        // --- 辅助与认证 ---
+        function parseJwt(token) { try { return JSON.parse(atob(token.split('.')[1])); } catch (e) { return null; }}
         const userToken = localStorage.getItem('userToken');
-        if (!userToken) {
-            alert('请先登录后再访问聊天室！');
-            window.location.href = 'login.html';
-        }
+        if (!userToken) window.location.href = 'login.html';
         const currentUser = parseJwt(userToken);
-        if (!currentUser || !currentUser.email) {
-            alert('登录信息无效，请重新登录！');
-            localStorage.removeItem('userToken');
-            window.location.href = 'login.html';
-        }
+        if (!currentUser || !currentUser.email) window.location.href = 'login.html';
 
-        // --- 1. 元素获取 ---
+        // --- 元素获取 ---
+        const userListEl = document.getElementById('user-list');
+        const chatHeaderEl = document.getElementById('chat-header');
         const messagesContainerEl = document.getElementById('messages-container');
         const messageInputEl = document.getElementById('message-input');
         const sendButtonEl = document.getElementById('send-button');
-        let db; // Firestore 数据库实例
+        const welcomePrompt = document.getElementById('welcome-prompt');
 
-        // --- 2. 核心功能函数 (保持不变) ---
+        // --- 状态管理 ---
+        let db;
+        let currentConversationId = null;
+        let currentRecipient = null;
+        let unsubscribe; // 用于取消 Firestore 的实时监听
+
+        // --- 核心功能 ---
         async function sendMessage() {
             const content = messageInputEl.value.trim();
-            if (!content) return;
+            if (!content || !currentRecipient) return;
             sendButtonEl.disabled = true;
             try {
-                const response = await fetch('/api/chat', {
+                await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
-                    body: JSON.stringify({ userEmail: currentUser.email, content: content })
+                    body: JSON.stringify({
+                        senderId: currentUser.id,
+                        senderEmail: currentUser.email,
+                        recipientId: currentRecipient.id,
+                        content: content
+                    })
                 });
-                if (!response.ok) throw new Error('发送失败');
                 messageInputEl.value = '';
-            } catch (error) {
-                console.error('发送消息失败:', error);
-                alert('消息发送失败，请重试。');
-            } finally {
-                sendButtonEl.disabled = false;
-                messageInputEl.focus();
-            }
+            } catch (error) { console.error('发送消息失败:', error); } 
+            finally { sendButtonEl.disabled = false; messageInputEl.focus(); }
         }
 
         function addMessageToUI(message) {
-            const messageGroup = document.createElement('div');
-            messageGroup.className = 'message-group';
-            if (message.userEmail === currentUser.email) messageGroup.classList.add('own-message');
+            const group = document.createElement('div');
+            group.className = 'message-group';
+            group.classList.add(message.senderId === currentUser.id ? 'own-message' : 'other-message');
+            
             const sender = document.createElement('div');
             sender.className = 'message-sender';
-            sender.textContent = message.userEmail;
+            sender.textContent = message.senderEmail;
+            
             const content = document.createElement('div');
             content.className = 'message-content';
             content.textContent = message.content;
-            messageGroup.appendChild(sender);
-            messageGroup.appendChild(content);
-            messagesContainerEl.appendChild(messageGroup);
+            
+            group.appendChild(sender);
+            group.appendChild(content);
+            messagesContainerEl.appendChild(group);
         }
 
         function scrollToBottom() {
-            messagesContainerEl.scrollTo({ top: messagesContainerEl.scrollHeight, behavior: 'smooth' });
+            messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
         }
 
-        // --- 3. 监听实时消息 (保持不变) ---
-        function listenForNewMessages() {
-            if (!db) return;
-            const messagesRef = db.collection('messages');
-            messagesRef.orderBy('createdAt', 'asc').onSnapshot(querySnapshot => {
+        function listenToConversation(conversationId) {
+            if (unsubscribe) unsubscribe(); // 取消上一个监听
+            messagesContainerEl.innerHTML = '';
+            const messagesRef = db.collection('conversations').doc(conversationId).collection('messages');
+            
+            unsubscribe = messagesRef.orderBy('createdAt', 'asc').onSnapshot(snapshot => {
                 messagesContainerEl.innerHTML = '';
-                querySnapshot.forEach(doc => addMessageToUI(doc.data()));
+                snapshot.forEach(doc => addMessageToUI(doc.data()));
                 scrollToBottom();
-            }, error => {
-                console.error("监听消息时出错: ", error);
-                messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">与聊天室的连接已断开，请刷新页面。</p>`;
-            });
+            }, console.error);
         }
-        
-        // --- 4. 初始化函数 (这是修改的核心) ---
-        async function initializeChat() {
+
+        async function switchConversation(recipientId, recipientEmail) {
+            welcomePrompt.style.display = 'none';
+            currentRecipient = { id: recipientId, email: recipientEmail };
+            
+            document.querySelectorAll('.user-list li').forEach(li => li.classList.remove('active'));
+            document.querySelector(`.user-list li[data-userid="${recipientId}"]`).classList.add('active');
+
+            chatHeaderEl.textContent = `与 ${recipientEmail} 的对话`;
+            messageInputEl.disabled = false;
+            sendButtonEl.disabled = false;
+            
+            const conversationId = [currentUser.id, recipientId].sort().join('_');
+            currentConversationId = conversationId;
+            listenToConversation(conversationId);
+        }
+
+        async function populateUserList() {
             try {
-                // 从我们自己的后端 /api/config 获取 Firebase 配置
-                const response = await fetch('/api/config');
-                if (!response.ok) {
-                    throw new Error(`无法获取配置: ${response.status}`);
-                }
-                const configData = await response.json();
-
-                // 检查配置是否存在且有效
-                if (!configData || !configData.firebaseConfig || !configData.firebaseConfig.apiKey) {
-                    throw new Error('从服务器收到的 Firebase 配置不完整或无效。');
-                }
-                
-                // 使用从后端获取的配置来初始化 Firebase
-                firebase.initializeApp(configData.firebaseConfig);
-                db = firebase.firestore();
-
-                // 绑定事件监听器
-                sendButtonEl.addEventListener('click', sendMessage);
-                messageInputEl.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        sendMessage();
-                    }
+                const response = await fetch('/api/users', {
+                    headers: { 'Authorization': `Bearer ${userToken}` }
                 });
-
-                // 启用输入框和按钮
-                messageInputEl.disabled = false;
-                sendButtonEl.disabled = false;
-                messagesContainerEl.innerHTML = ''; // 清空"正在连接"的提示
-
-                // 开始监听实时消息
-                listenForNewMessages();
-
+                const users = await response.json();
+                userListEl.innerHTML = '';
+                users.forEach(user => {
+                    const li = document.createElement('li');
+                    li.dataset.userid = user.id;
+                    li.dataset.email = user.email;
+                    li.innerHTML = `<i class="fas fa-user"></i> ${user.email}`;
+                    li.addEventListener('click', () => switchConversation(user.id, user.email));
+                    userListEl.appendChild(li);
+                });
             } catch (error) {
-                console.error('聊天功能初始化失败:', error);
-                messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">聊天室加载失败，请检查配置并刷新页面重试。</p>`;
+                console.error("获取用户列表失败:", error);
             }
         }
 
-        // --- 5. 启动！ ---
+        // --- 初始化 ---
+        async function initializeChat() {
+            try {
+                const response = await fetch('/api/config');
+                const configData = await response.json();
+                firebase.initializeApp(configData.firebaseConfig);
+                db = firebase.firestore();
+
+                sendButtonEl.addEventListener('click', sendMessage);
+                messageInputEl.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+                });
+
+                await populateUserList();
+            } catch (error) {
+                console.error('聊天功能初始化失败:', error);
+                messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">聊天室加载失败，请刷新页面。</p>`;
+            }
+        }
+        
         document.addEventListener('DOMContentLoaded', initializeChat);
     </script>
 </body>

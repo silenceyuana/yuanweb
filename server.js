@@ -15,7 +15,7 @@ const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const axios = require('axios');
 const { Resend } = require('resend');
-const admin = require('firebase-admin'); // 新增: Firebase Admin SDK
+const admin = require('firebase-admin');
 
 // ======================================================
 // --- 2. 应用初始化与环境变量检查 ---
@@ -28,7 +28,6 @@ const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
     'RESEND_API_KEY', 'MAIL_FROM_ADDRESS',
-    // 新增 Firebase 相关的环境变量检查
     'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID', 
     'FIREBASE_ADMIN_SDK_CONFIG'
 ];
@@ -44,14 +43,14 @@ for (const varName of requiredEnvVars) {
 // --- 3. 第三方服务与数据库连接 ---
 // ======================================================
 
-// --- Supabase / PostgreSQL 连接 (为用户系统和工单保留) ---
+// --- Supabase / PostgreSQL 连接 ---
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-// --- Resend (Email) 连接 (保持不变) ---
+// --- Resend (Email) 连接 ---
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = {};
 
-// --- Firebase Admin SDK 初始化 (为聊天功能新增) ---
+// --- Firebase Admin SDK 初始化 ---
 if (!admin.apps.length) {
   try {
     admin.initializeApp({
@@ -63,12 +62,10 @@ if (!admin.apps.length) {
   }
 }
 const db = admin.firestore();
-const messagesRef = db.collection('messages');
 const MESSAGE_LIMIT = 500;
 
-
 // ======================================================
-// --- 4. 中间件配置 (保持不变) ---
+// --- 4. 中间件配置 ---
 // ======================================================
 app.set('trust proxy', 1);
 app.use(cors());
@@ -82,7 +79,7 @@ const loginLimiter = rateLimit({
 });
 
 // ======================================================
-// --- 5. 认证中间件 (保持不变) ---
+// --- 5. 认证中间件 ---
 // ======================================================
 const authenticateUser = (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -112,7 +109,7 @@ const authenticateAdmin = (req, res, next) => {
 // --- 6. API 路由定义 ---
 // ======================================================
 
-// --- 配置接口 (修改: 提供 Firebase 的公钥给前端) ---
+// --- 配置接口 ---
 app.get('/api/config', (req, res) => {
     res.json({
         firebaseConfig: {
@@ -126,7 +123,7 @@ app.get('/api/config', (req, res) => {
     });
 });
 
-// --- 注册流程 API (保持不变, 使用 PostgreSQL) ---
+// --- 注册流程 API ---
 app.post('/api/send-verification-code', async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: '邮箱不能为空！' });
@@ -192,7 +189,7 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// --- 用户账户与密码重置 API (保持不变, 使用 PostgreSQL) ---
+// --- 用户账户与密码重置 API ---
 app.post('/api/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: '邮箱和密码不能为空！' });
@@ -263,41 +260,70 @@ app.post('/api/reset-password', async (req, res) => {
 // --- 新增: 聊天消息 API (使用 Firebase Firestore) ---
 app.post('/api/chat', authenticateUser, async (req, res) => {
     try {
-      const { userEmail, content } = req.body;
-      if (!userEmail || !content) {
-        return res.status(400).json({ error: '缺少 userEmail 或 content' });
-      }
+        const { senderId, senderEmail, recipientId, content } = req.body;
+        if (!senderId || !recipientId || !content || !senderEmail) {
+            return res.status(400).json({ error: '缺少必要参数 (senderId, senderEmail, recipientId, content)' });
+        }
 
-      // 1. 在 Firestore 中添加新消息
-      const newMessage = {
-        userEmail,
-        content,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-      await messagesRef.add(newMessage);
+        const participants = [senderId, recipientId].sort();
+        const conversationId = participants.join('_');
+        
+        const conversationRef = db.collection('conversations').doc(conversationId);
+        const messagesRef = conversationRef.collection('messages');
 
-      // 2. 检查并清理旧消息
-      const snapshot = await messagesRef.orderBy('createdAt', 'desc').get();
-      
-      if (snapshot.size > MESSAGE_LIMIT) {
-        const batch = db.batch();
-        const docsToDelete = snapshot.docs.slice(MESSAGE_LIMIT);
-        docsToDelete.forEach(doc => {
-          batch.delete(doc.ref);
-        });
-        await batch.commit();
-      }
+        const conversationSnap = await conversationRef.get();
+        if (!conversationSnap.exists) {
+            await conversationRef.set({
+                participants: participants,
+                lastMessage: content,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        } else {
+            await conversationRef.update({
+                lastMessage: content,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
 
-      res.status(201).json({ success: true });
+        const newMessage = {
+            senderId,
+            senderEmail,
+            content,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        await messagesRef.add(newMessage);
+
+        const snapshot = await messagesRef.orderBy('createdAt', 'desc').get();
+        if (snapshot.size > MESSAGE_LIMIT) {
+            const batch = db.batch();
+            const docsToDelete = snapshot.docs.slice(MESSAGE_LIMIT);
+            docsToDelete.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+        }
+
+        res.status(201).json({ success: true, conversationId });
 
     } catch (error) {
-      console.error('发送聊天消息 API 出错:', error);
-      res.status(500).json({ error: '发送消息失败' });
+        console.error('发送聊天消息 API 出错:', error);
+        res.status(500).json({ error: '发送消息失败' });
     }
 });
 
 
-// --- 工单 (Tickets) API (保持不变, 使用 PostgreSQL) ---
+// --- 新增: 获取用户列表 API (用于私信) ---
+app.get('/api/users', authenticateUser, async (req, res) => {
+    const currentUserId = req.user.id;
+    try {
+        const result = await pool.query('SELECT id, email FROM users WHERE id != $1 ORDER BY "createdAt" DESC', [currentUserId]);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('获取用户列表 API 出错:', error);
+        res.status(500).json({ message: '服务器内部错误' });
+    }
+});
+
+
+// --- 工单 (Tickets) API ---
 app.post('/api/tickets', authenticateUser, async (req, res) => {
     const { subject, message } = req.body;
     if (!subject || !message) {
@@ -314,7 +340,7 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     }
 });
 
-// --- 管理员 (Admin) API (保持不变, 使用 PostgreSQL) ---
+// --- 管理员 (Admin) API ---
 app.post('/api/admin/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -388,7 +414,7 @@ app.get('/api/admin/tickets', authenticateAdmin, async (req, res) => {
 });
 
 // ======================================================
-// --- 7. 页面路由与服务器启动 (保持不变) ---
+// --- 7. 页面路由与服务器启动 ---
 // ======================================================
 
 app.get('/admin', (req, res) => {
