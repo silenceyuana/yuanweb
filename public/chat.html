@@ -7,7 +7,7 @@
     <title>聊天室 - YUAN</title>
     <link rel="icon" href="assets/img/favicon.ico" />
     
-    <!-- 1. 立即执行的主题同步脚本，防止页面闪烁 -->
+    <!-- 1. 立即执行的主题同步脚本 -->
     <script src="assets/js/theme-sync.js"></script>
 
     <!-- 2. CSS 文件 -->
@@ -140,11 +140,11 @@
 </head>
 <body>
     
-    <!-- 导航栏 (与主页保持一致, 包含登录/用户下拉菜单和主题切换器) -->
+    <!-- 导航栏 (与主页保持一致) -->
     <nav class="navbar">
         <div class="container navbar-content">
             <a class="navbar-brand h1" href="index.html">YUAN</a>
-            <div class="nav-items" id="nav-items" style="display: flex;"> <!-- 强制显示以简化 -->
+            <div class="nav-items" id="nav-items" style="display: flex;">
                 <a href="index.html" class="btn btn-sm btn-outline-primary">返回主页</a>
                 <div class="user-dropdown" id="user-dropdown" style="display: none;">
                     <button class="user-dropdown-toggle" id="user-dropdown-toggle">
@@ -170,7 +170,6 @@
             <h2>聊天室</h2>
             <ul class="room-list" id="room-list">
                 <li class="active" data-room="general"># 综合频道</li>
-                
             </ul>
         </aside>
 
@@ -181,23 +180,28 @@
                 <p style="text-align: center; color: var(--text-color-secondary);">正在连接到聊天室...</p>
             </div>
             <div class="message-input-area">
-                <input type="text" id="message-input" placeholder="输入消息，按 Enter 发送...">
-                <button id="send-button" aria-label="发送消息"><i class="fas fa-paper-plane"></i></button>
+                <input type="text" id="message-input" placeholder="输入消息，按 Enter 发送..." disabled>
+                <button id="send-button" aria-label="发送消息" disabled><i class="fas fa-paper-plane"></i></button>
             </div>
         </main>
     </div>
 
-    <!-- 4. 引入 Supabase 客户端库 -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- 4. 引入 Firebase 客户端库 (替换 Supabase) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
     <!-- 5. 引入全局交互脚本 (处理导航栏、主题等) -->
     <script src="assets/js/global.js" defer></script>
 
-    <!-- 6. 聊天核心逻辑脚本 -->
+    <!-- 6. 聊天核心逻辑脚本 (新版) -->
     <script>
         // --- 辅助函数 ---
         function parseJwt(token) {
-            try { return JSON.parse(atob(token.split('.')[1])); } catch (e) { return null; }
+            try {
+                return JSON.parse(atob(token.split('.')[1]));
+            } catch (e) {
+                return null;
+            }
         }
 
         // --- 0. 认证检查 ---
@@ -214,47 +218,40 @@
         }
 
         // --- 1. 元素获取与状态管理 ---
-        const roomListEl = document.getElementById('room-list');
-        const chatHeaderEl = document.getElementById('chat-header');
         const messagesContainerEl = document.getElementById('messages-container');
         const messageInputEl = document.getElementById('message-input');
         const sendButtonEl = document.getElementById('send-button');
-
-        let supabase;
-        let currentRoom = 'general';
-        let realtimeChannel;
+        let db; // Firestore 数据库实例
 
         // --- 2. 核心功能函数 ---
-        async function loadMessages(room) {
-            messagesContainerEl.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">正在加载历史消息...</p>';
-            const { data, error } = await supabase.from('messages').select('*').eq('room', room).order('createdAt', { ascending: true });
-            if (error) {
-                console.error('加载历史消息失败:', error);
-                messagesContainerEl.innerHTML = '<p>加载消息失败。</p>';
-                return;
-            }
-            messagesContainerEl.innerHTML = '';
-            data.forEach(addMessageToUI);
-            scrollToBottom();
-        }
-
         async function sendMessage() {
             const content = messageInputEl.value.trim();
-            if (!content || !supabase) return;
+            if (!content) return;
 
-            sendButtonEl.disabled = true; // 防止重复发送
-            const { error } = await supabase.from('messages').insert({
-                room: currentRoom,
-                content: content,
-                userEmail: currentUser.email
-            });
-            sendButtonEl.disabled = false; // 恢复按钮
+            sendButtonEl.disabled = true;
 
-            if (error) {
+            try {
+                // 调用后端 API 来发送消息并触发清理
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userEmail: currentUser.email,
+                        content: content
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('服务器响应错误');
+                }
+                
+                messageInputEl.value = '';
+
+            } catch (error) {
                 console.error('发送消息失败:', error);
                 alert('消息发送失败，请重试。');
-            } else {
-                messageInputEl.value = '';
+            } finally {
+                sendButtonEl.disabled = false;
                 messageInputEl.focus();
             }
         }
@@ -262,7 +259,6 @@
         function addMessageToUI(message) {
             const messageGroup = document.createElement('div');
             messageGroup.className = 'message-group';
-            // 判断是否是自己发送的消息
             if (message.userEmail === currentUser.email) {
                 messageGroup.classList.add('own-message');
             }
@@ -281,61 +277,66 @@
         }
 
         function scrollToBottom() {
-            messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
+            // 平滑滚动到底部
+            messagesContainerEl.scrollTo({ top: messagesContainerEl.scrollHeight, behavior: 'smooth' });
         }
 
-        function switchRoom(newRoom) {
-            if (currentRoom === newRoom || !supabase) return;
-            if (realtimeChannel) { supabase.removeChannel(realtimeChannel); }
-            currentRoom = newRoom;
-            document.querySelector('.room-list li.active').classList.remove('active');
-            document.querySelector(`.room-list li[data-room="${newRoom}"]`).classList.add('active');
-            chatHeaderEl.textContent = `# ${newRoom.charAt(0).toUpperCase() + newRoom.slice(1)}`;
-            loadMessages(currentRoom);
-            listenForNewMessages();
-        }
-
+        // --- 3. 监听实时消息 ---
         function listenForNewMessages() {
-            realtimeChannel = supabase.channel(`room:${currentRoom}`)
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room=eq.${currentRoom}` }, (payload) => {
-                    // 避免收到自己发送的消息的回声
-                    if (payload.new.userEmail !== currentUser.email) {
-                        addMessageToUI(payload.new);
-                        scrollToBottom();
-                    }
-                }).subscribe();
+            if (!db) return;
+            
+            const messagesRef = db.collection('messages');
+            
+            messagesRef.orderBy('createdAt', 'asc') // 按时间戳升序排列
+                .onSnapshot(querySnapshot => {
+                    messagesContainerEl.innerHTML = ''; // 每次更新都清空重绘
+                    querySnapshot.forEach(doc => {
+                        addMessageToUI(doc.data());
+                    });
+                    scrollToBottom();
+                }, error => {
+                    console.error("监听消息时出错: ", error);
+                    messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">与聊天室的连接已断开，请刷新页面。</p>`;
+                    messageInputEl.disabled = true;
+                    sendButtonEl.disabled = true;
+                });
         }
-
-        // --- 3. 初始化函数 ---
+        
+        // --- 4. 初始化函数 ---
         async function initializeChat() {
             try {
+                // 从后端获取 Firebase 配置
                 const response = await fetch('/api/config');
-                if (!response.ok) throw new Error('无法获取配置');
-                const config = await response.json();
+                if (!response.ok) throw new Error('无法获取 Firebase 配置');
+                const firebaseConfig = await response.json();
                 
-                supabase = supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+                // 初始化 Firebase 应用
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
 
                 // 绑定事件
                 sendButtonEl.addEventListener('click', sendMessage);
-                messageInputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
-                roomListEl.addEventListener('click', (e) => {
-                    if (e.target && e.target.tagName === 'LI') {
-                        const newRoom = e.target.dataset.room;
-                        if (newRoom) switchRoom(newRoom);
+                messageInputEl.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault(); // 防止回车换行
+                        sendMessage();
                     }
                 });
 
-                // 初始加载
-                await loadMessages(currentRoom);
+                // 启用输入框和按钮
+                messageInputEl.disabled = false;
+                sendButtonEl.disabled = false;
+
+                // 开始监听实时消息
                 listenForNewMessages();
 
             } catch (error) {
                 console.error('聊天功能初始化失败:', error);
-                messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">聊天室加载失败，请刷新页面重试。</p>`;
+                messagesContainerEl.innerHTML = `<p style="text-align: center; color: red;">聊天室加载失败，请检查配置并刷新页面重试。</p>`;
             }
         }
 
-        // --- 4. 启动！ ---
+        // --- 5. 启动！ ---
         // 等待整个页面加载完毕后，再初始化聊天功能
         document.addEventListener('DOMContentLoaded', initializeChat);
 

@@ -15,6 +15,7 @@ const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const axios = require('axios');
 const { Resend } = require('resend');
+const admin = require('firebase-admin'); // 新增: Firebase Admin SDK
 
 // ======================================================
 // --- 2. 应用初始化与环境变量检查 ---
@@ -22,16 +23,14 @@ const { Resend } = require('resend');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const {
-    DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, JWT_SECRET,
-    PASSWORD_RESET_SECRET, BASE_URL, TURNSTILE_SECRET_KEY, 
-    RESEND_API_KEY, MAIL_FROM_ADDRESS
-} = process.env;
-
+// 检查所有需要的环境变量
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
-    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS'
+    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS',
+    // 新增 Firebase 相关的环境变量检查
+    'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID', 
+    'FIREBASE_ADMIN_SDK_CONFIG'
 ];
 
 for (const varName of requiredEnvVars) {
@@ -45,12 +44,31 @@ for (const varName of requiredEnvVars) {
 // --- 3. 第三方服务与数据库连接 ---
 // ======================================================
 
-const pool = new Pool({ connectionString: DATABASE_URL });
-const resend = new Resend(RESEND_API_KEY);
+// --- Supabase / PostgreSQL 连接 (为用户系统和工单保留) ---
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// --- Resend (Email) 连接 (保持不变) ---
+const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = {};
 
+// --- Firebase Admin SDK 初始化 (为聊天功能新增) ---
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_ADMIN_SDK_CONFIG))
+    });
+  } catch (error) {
+    console.error('Firebase Admin SDK 初始化失败:', error);
+    process.exit(1);
+  }
+}
+const db = admin.firestore();
+const messagesRef = db.collection('messages');
+const MESSAGE_LIMIT = 500;
+
+
 // ======================================================
-// --- 4. 中间件配置 ---
+// --- 4. 中间件配置 (保持不变) ---
 // ======================================================
 app.set('trust proxy', 1);
 app.use(cors());
@@ -64,13 +82,13 @@ const loginLimiter = rateLimit({
 });
 
 // ======================================================
-// --- 5. 认证中间件 ---
+// --- 5. 认证中间件 (保持不变) ---
 // ======================================================
 const authenticateUser = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
-    jwt.verify(token, JWT_SECRET, (err, user) => {
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err) return res.sendStatus(403);
         req.user = user;
         next();
@@ -81,7 +99,7 @@ const authenticateAdmin = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
-    jwt.verify(token, JWT_SECRET, (err, user) => {
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err || user.role !== 'admin') {
             return res.status(403).json({ message: '需要管理员权限！' });
         }
@@ -94,12 +112,21 @@ const authenticateAdmin = (req, res, next) => {
 // --- 6. API 路由定义 ---
 // ======================================================
 
-// --- 配置接口 ---
+// --- 配置接口 (修改: 提供 Firebase 的公钥给前端) ---
 app.get('/api/config', (req, res) => {
-    res.json({ supabaseUrl: SUPABASE_URL, supabaseAnonKey: SUPABASE_ANON_KEY });
+    res.json({
+        firebaseConfig: {
+            apiKey: process.env.FIREBASE_API_KEY,
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+            appId: process.env.FIREBASE_APP_ID
+        }
+    });
 });
 
-// --- 注册流程 API ---
+// --- 注册流程 API (保持不变, 使用 PostgreSQL) ---
 app.post('/api/send-verification-code', async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: '邮箱不能为空！' });
@@ -111,9 +138,8 @@ app.post('/api/send-verification-code', async (req, res) => {
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         verificationCodes[email] = { code, expires: Date.now() + 5 * 60 * 1000 };
 
-        // ====> 使用精美邮件模板 <====
         await resend.emails.send({
-            from: `YUAN的网站 <${MAIL_FROM_ADDRESS}>`,
+            from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
             to: [email],
             subject: '您的注册验证码',
             html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>您的验证码</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">欢迎注册！</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">您的验证码是：</p><div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin: 30px 0; text-align: center;"><p style="font-size: 36px; font-weight: bold; color: #0d6efd; letter-spacing: 5px; margin: 0;">${code}</p></div><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">该验证码将在5分钟内失效，请勿泄露给他人。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
@@ -127,7 +153,6 @@ app.post('/api/send-verification-code', async (req, res) => {
 });
 
 app.post('/api/register', async (req, res) => {
-    // ... (注册逻辑保持不变)
     const { email, password, code, turnstileToken } = req.body;
     if (!turnstileToken) {
         return res.status(400).json({ message: '人机验证失败，请刷新重试。' });
@@ -135,7 +160,7 @@ app.post('/api/register', async (req, res) => {
     try {
         const response = await axios.post(
             'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-            { secret: TURNSTILE_SECRET_KEY, response: turnstileToken },
+            { secret: process.env.TURNSTILE_SECRET_KEY, response: turnstileToken },
             { headers: { 'Content-Type': 'application/json' } }
         );
         if (!response.data.success) {
@@ -167,9 +192,8 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// --- 用户账户与密码重置 API ---
+// --- 用户账户与密码重置 API (保持不变, 使用 PostgreSQL) ---
 app.post('/api/login', loginLimiter, async (req, res) => {
-    // ... (登录逻辑保持不变)
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: '邮箱和密码不能为空！' });
     try {
@@ -181,7 +205,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
         if (user.isBanned) {
             return res.status(403).json({ message: '您的账户已被封禁，请联系管理员。' });
         }
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.status(200).json({ message: '登录成功！', token, user: { email: user.email, role: user.role } });
     } catch (error) {
         console.error('登录 API 出错:', error);
@@ -199,12 +223,11 @@ app.post('/api/forgot-password', async (req, res) => {
         const user = result.rows[0];
 
         if (user) {
-            const passwordResetToken = jwt.sign({ id: user.id, email: user.email }, PASSWORD_RESET_SECRET, { expiresIn: '15m' });
-            const resetLink = `${BASE_URL}/reset-password.html?token=${passwordResetToken}`;
+            const passwordResetToken = jwt.sign({ id: user.id, email: user.email }, process.env.PASSWORD_RESET_SECRET, { expiresIn: '15m' });
+            const resetLink = `${process.env.BASE_URL}/reset-password.html?token=${passwordResetToken}`;
             
-            // ====> 为密码重置邮件也使用精美模板 <====
             await resend.emails.send({
-                from: `YUAN的网站 <${MAIL_FROM_ADDRESS}>`,
+                from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
                 to: [email],
                 subject: '重置您的账户密码',
                 html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>重置您的密码</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">密码重置请求</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">我们收到了一个重置您账户密码的请求。请点击下方的按钮来设置您的新密码：</p><div style="text-align: center; margin: 30px 0;"><a href="${resetLink}" style="background-color: #0d6efd; color: white; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">重置密码</a></div><p style="font-size: 14px; color: #606770; text-align: center; line-height: 1.6;">此链接将在 <strong>15 分钟</strong> 内失效。如果您没有请求重置密码，请忽略此邮件。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
@@ -218,13 +241,12 @@ app.post('/api/forgot-password', async (req, res) => {
 });
 
 app.post('/api/reset-password', async (req, res) => {
-    // ... (重置密码逻辑保持不变)
     const { token, newPassword } = req.body;
     if (!token || !newPassword || newPassword.length < 6) {
         return res.status(400).json({ message: '缺少必要信息，或新密码格式不正确（至少6位）。' });
     }
     try {
-        const decoded = jwt.verify(token, PASSWORD_RESET_SECRET);
+        const decoded = jwt.verify(token, process.env.PASSWORD_RESET_SECRET);
         const hashedPassword = bcrypt.hashSync(newPassword, 10);
         await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
         res.status(200).json({ message: '密码已成功重置！您现在可以用新密码登录了。' });
@@ -237,9 +259,46 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
-// --- 工单 (Tickets) API ---
+
+// --- 新增: 聊天消息 API (使用 Firebase Firestore) ---
+app.post('/api/chat', authenticateUser, async (req, res) => {
+    try {
+      const { userEmail, content } = req.body;
+      if (!userEmail || !content) {
+        return res.status(400).json({ error: '缺少 userEmail 或 content' });
+      }
+
+      // 1. 在 Firestore 中添加新消息
+      const newMessage = {
+        userEmail,
+        content,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      await messagesRef.add(newMessage);
+
+      // 2. 检查并清理旧消息
+      const snapshot = await messagesRef.orderBy('createdAt', 'desc').get();
+      
+      if (snapshot.size > MESSAGE_LIMIT) {
+        const batch = db.batch();
+        const docsToDelete = snapshot.docs.slice(MESSAGE_LIMIT);
+        docsToDelete.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+      }
+
+      res.status(201).json({ success: true });
+
+    } catch (error) {
+      console.error('发送聊天消息 API 出错:', error);
+      res.status(500).json({ error: '发送消息失败' });
+    }
+});
+
+
+// --- 工单 (Tickets) API (保持不变, 使用 PostgreSQL) ---
 app.post('/api/tickets', authenticateUser, async (req, res) => {
-    // ... (代码保持不变)
     const { subject, message } = req.body;
     if (!subject || !message) {
         return res.status(400).json({ message: '工单主题和内容不能为空！' });
@@ -255,8 +314,7 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     }
 });
 
-// --- 管理员 (Admin) API ---
-// ... (所有管理员 API 保持不变)
+// --- 管理员 (Admin) API (保持不变, 使用 PostgreSQL) ---
 app.post('/api/admin/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -265,7 +323,7 @@ app.post('/api/admin/login', loginLimiter, async (req, res) => {
         if (!user || !bcrypt.compareSync(password, user.password)) {
             return res.status(401).json({ message: '管理员凭证无效！' });
         }
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.json({ message: '管理员登录成功！', token });
     } catch (error) {
         console.error('管理员登录 API 出错:', error);
@@ -330,7 +388,7 @@ app.get('/api/admin/tickets', authenticateAdmin, async (req, res) => {
 });
 
 // ======================================================
-// --- 7. 页面路由与服务器启动 ---
+// --- 7. 页面路由与服务器启动 (保持不变) ---
 // ======================================================
 
 app.get('/admin', (req, res) => {
