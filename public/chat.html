@@ -28,125 +28,138 @@
         </footer>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const userToken = localStorage.getItem('userToken');
-            if (!userToken) {
-                alert('请先登录后再访问此页面！');
-                window.location.href = 'login.html';
-                return;
-            }
+   <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const userToken = localStorage.getItem('userToken');
+        if (!userToken) {
+            alert('请先登录后再访问此页面！');
+            window.location.href = 'login.html';
+            return;
+        }
 
-            const messagesContainer = document.getElementById('messages-container');
-            const messageForm = document.getElementById('message-form');
-            const messageInput = document.getElementById('message-input');
-            const loadingIndicator = document.querySelector('.loading-indicator');
+        const messagesContainer = document.getElementById('messages-container');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const loadingIndicator = document.querySelector('.loading-indicator');
 
-            let supabase;
-            let currentUserEmail = '';
+        // 修正 1：重命名局部变量，避免与全局 supabase 对象冲突
+        let supabaseClient; 
+        let currentUserEmail = '';
 
-            // 从 Token 中解析出用户信息 (一个简化的客户端解码)
+        try {
+            const payload = JSON.parse(atob(userToken.split('.')[1]));
+            currentUserEmail = payload.email;
+        } catch (e) {
+            console.error("无法解析 Token:", e);
+            localStorage.removeItem('userToken');
+            window.location.href = 'login.html';
+            return;
+        }
+        
+        const scrollToBottom = () => {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        };
+
+        const displayMessage = (msg) => {
+            const isSent = msg.user_email === currentUserEmail;
+            const bubble = document.createElement('div');
+            bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
+            
+            const sender = isSent ? '你' : msg.user_email.split('@')[0];
+            bubble.innerHTML = `
+                <div class="sender">${sender}</div>
+                <div class="content">${msg.content}</div>
+                <div class="timestamp">${new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div>
+            `;
+            messagesContainer.appendChild(bubble);
+        };
+
+        const initializeSupabase = async (url, key) => {
+            // 修正 2：使用全局 supabase 对象来创建客户端实例
+            supabaseClient = supabase.createClient(url, key, {
+                global: { headers: { Authorization: `Bearer ${userToken}` } }
+            });
+
+            supabaseClient.channel('public:messages')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+                    // 确保不是自己刚刚发送的消息才再次显示（避免重复）
+                    if (payload.new.user_email !== currentUserEmail || payload.commit_timestamp !== null) {
+                        displayMessage(payload.new);
+                        scrollToBottom();
+                    }
+                })
+                .subscribe();
+        };
+
+        async function main() {
             try {
-                const payload = JSON.parse(atob(userToken.split('.')[1]));
-                currentUserEmail = payload.email;
-            } catch (e) {
-                console.error("无法解析 Token:", e);
-                localStorage.removeItem('userToken');
-                window.location.href = 'login.html';
+                const configRes = await fetch('/api/config');
+                const config = await configRes.json();
+                await initializeSupabase(config.supabaseUrl, config.supabaseAnonKey);
+            } catch (err) {
+                // 修正 3：在控制台打印出具体错误，方便调试
+                console.error("初始化实时服务失败:", err); 
+                loadingIndicator.textContent = "无法连接到实时服务。";
                 return;
             }
             
-            // 滚动到底部
-            const scrollToBottom = () => {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            };
-
-            // 创建并显示消息气泡
-            const displayMessage = (msg) => {
-                const isSent = msg.user_email === currentUserEmail;
-                const bubble = document.createElement('div');
-                bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
+            try {
+                const res = await fetch('/api/chat/messages', {
+                    headers: { 'Authorization': `Bearer ${userToken}` }
+                });
+                if (!res.ok) throw new Error('获取历史消息失败');
                 
-                const sender = isSent ? '你' : msg.user_email.split('@')[0];
-                bubble.innerHTML = `
-                    <div class="sender">${sender}</div>
-                    <div class="content">${msg.content}</div>
-                    <div class="timestamp">${new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div>
-                `;
-                messagesContainer.appendChild(bubble);
-            };
+                const messages = await res.json();
+                loadingIndicator.style.display = 'none';
+                messages.forEach(displayMessage);
+                scrollToBottom();
+            } catch (err) {
+                console.error("获取历史消息失败:", err);
+                loadingIndicator.textContent = err.message;
+            }
+        }
 
-            // 初始化 Supabase 客户端并订阅实时消息
-            const initializeSupabase = async (url, key) => {
-                supabase = supabase.createClient(url, key, {
-                    global: { headers: { Authorization: `Bearer ${userToken}` } }
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const content = messageInput.value.trim();
+            if (!content) return;
+
+            // 临时创建一个消息气泡，立即显示
+            const tempMessage = {
+                user_email: currentUserEmail,
+                content: content,
+                created_at: new Date().toISOString()
+            };
+            displayMessage(tempMessage);
+            scrollToBottom();
+
+            const originalMessage = messageInput.value;
+            messageInput.value = ''; // 立即清空输入框
+
+            try {
+                const response = await fetch('/api/chat/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${userToken}`
+                    },
+                    body: JSON.stringify({ content })
                 });
 
-                // 订阅 'messages' 表的插入事件
-                supabase.channel('public:messages')
-                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-                        displayMessage(payload.new);
-                        scrollToBottom();
-                    })
-                    .subscribe();
-            };
-
-            // 主流程
-            async function main() {
-                // 1. 获取 Supabase 配置
-                try {
-                    const configRes = await fetch('/api/config');
-                    const config = await configRes.json();
-                    await initializeSupabase(config.supabaseUrl, config.supabaseAnonKey);
-                } catch (err) {
-                    loadingIndicator.textContent = "无法连接到实时服务。";
-                    return;
+                if (!response.ok) {
+                    // 如果发送失败，恢复输入框内容
+                    throw new Error("发送失败");
                 }
-                
-                // 2. 获取历史消息
-                try {
-                    const res = await fetch('/api/chat/messages', {
-                        headers: { 'Authorization': `Bearer ${userToken}` }
-                    });
-                    if (!res.ok) throw new Error('获取历史消息失败');
-                    
-                    const messages = await res.json();
-                    loadingIndicator.style.display = 'none';
-                    messages.forEach(displayMessage);
-                    scrollToBottom();
-                } catch (err) {
-                    loadingIndicator.textContent = err.message;
-                }
+            } catch (err) {
+                alert('消息发送失败，请重试。');
+                messageInput.value = originalMessage; // 恢复输入
+            } finally {
+                messageInput.focus();
             }
-
-            // 发送消息
-            messageForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const content = messageInput.value.trim();
-                if (!content) return;
-
-                messageInput.disabled = true;
-
-                try {
-                    await fetch('/api/chat/messages', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${userToken}`
-                        },
-                        body: JSON.stringify({ content })
-                    });
-                    messageInput.value = '';
-                } catch (err) {
-                    alert('消息发送失败，请重试。');
-                } finally {
-                    messageInput.disabled = false;
-                    messageInput.focus();
-                }
-            });
-
-            main();
         });
-    </script>
+
+        main();
+    });
+</script>
 </body>
 </html>
