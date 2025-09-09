@@ -22,7 +22,7 @@ const { Resend } = require('resend');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 检查所有必需的环境变量 (已移除 Firebase 变量)
+// 检查所有必需的环境变量
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
@@ -92,7 +92,7 @@ const authenticateAdmin = (req, res, next) => {
 // --- 6. API 路由定义 ---
 // ======================================================
 
-// --- 配置接口 (现在只提供 Supabase 的公钥) ---
+// --- 配置接口 ---
 app.get('/api/config', (req, res) => {
     res.json({ 
         supabaseUrl: process.env.SUPABASE_URL, 
@@ -159,6 +159,19 @@ app.post('/api/register', async (req, res) => {
         const hashedPassword = bcrypt.hashSync(password, 10);
         await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, hashedPassword]);
         delete verificationCodes[email];
+
+        // --- 注册成功后发送欢迎邮件 ---
+        try {
+            await resend.emails.send({
+                from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
+                to: [email],
+                subject: '欢迎来到YUAN的网站！',
+                html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>欢迎注册！</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">注册成功！</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">感谢您注册YUAN的网站。我们很高兴您的加入！</p><div style="text-align: center; margin: 30px 0;"><a href="${process.env.BASE_URL}/login.html" style="background-color: #0d6efd; color: white; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">立即登录</a></div><p style="font-size: 14px; color: #606770; text-align: center; line-height: 1.6;">如果您有任何疑问，请随时通过提交工单与我们联系。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
+            });
+        } catch (emailError) {
+            console.error('发送注册欢迎邮件失败:', emailError);
+        }
+        
         res.status(201).json({ message: '注册成功！' });
     } catch (error) {
         console.error('注册 API 出错:', error);
@@ -243,10 +256,56 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     const sql = `INSERT INTO tickets ("userId", "userEmail", subject, message) VALUES ($1, $2, $3, $4)`;
     try {
         await pool.query(sql, [userId, userEmail, subject, message]);
+
+        // --- 发送工单成功后给管理员发送通知邮件 ---
+        resend.emails.send({
+            from: `YUAN的网站-系统通知 <${process.env.MAIL_FROM_ADDRESS}>`,
+            to: [process.env.MAIL_FROM_ADDRESS],
+            subject: `新工单提醒: ${subject}`,
+            html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>新工单提醒</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 25px;">新工单提醒</h1><div style="font-size: 16px; color: #606770; line-height: 1.6;"><p style="margin: 0 0 10px;"><strong>来自用户:</strong> ${userEmail}</p><p style="margin: 0 0 10px;"><strong>主题:</strong> ${subject}</p><p style="margin: 0; white-space: pre-wrap; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px;">${message}</p></div><div style="text-align: center; margin: 30px 0;"><a href="${process.env.BASE_URL}/admin-dashboard.html" style="background-color: #0d6efd; color: white; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">查看后台面板</a></div><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
+        }).catch(emailError => {
+            console.error('发送新工单通知邮件失败:', emailError);
+        });
+        
         res.status(201).json({ message: '工单已成功发送！' });
     } catch (error) {
         console.error('创建工单 API 出错:', error);
         res.status(500).json({ message: '服务器错误，无法保存工单。' });
+    }
+});
+
+// --- 新增: 聊天 (Chat) API ---
+app.get('/api/chat/messages', authenticateUser, async (req, res) => {
+    try {
+        // 获取最新的 500 条消息，按时间升序排列
+        const result = await pool.query(
+            'SELECT m.id, m.user_id, m.user_email, m.content, m.created_at FROM messages m ORDER BY m.created_at DESC LIMIT 500'
+        );
+        // 前端需要正序显示，所以反转数组
+        res.json(result.rows.reverse());
+    } catch (error) {
+        console.error('获取聊天消息 API 出错:', error);
+        res.status(500).json({ message: '无法获取消息。' });
+    }
+});
+
+app.post('/api/chat/messages', authenticateUser, async (req, res) => {
+    const { content } = req.body;
+    if (!content || content.trim() === '') {
+        return res.status(400).json({ message: '消息内容不能为空！' });
+    }
+    const { id: userId, email: userEmail } = req.user;
+
+    try {
+        // 插入消息到数据库，Supabase Realtime 会自动广播
+        const result = await pool.query(
+            'INSERT INTO messages (user_id, user_email, content) VALUES ($1, $2, $3) RETURNING *',
+            [userId, userEmail, content.trim()]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error('发送聊天消息 API 出错:', error);
+        res.status(500).json({ message: '无法发送消息。' });
     }
 });
 
