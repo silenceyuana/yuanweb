@@ -179,7 +179,7 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// --- 用户账户与密码重置 API ---
+// --- 用户账户、密码重置、个人资料 API ---
 app.post('/api/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: '邮箱和密码不能为空！' });
@@ -193,7 +193,11 @@ app.post('/api/login', loginLimiter, async (req, res) => {
             return res.status(403).json({ message: '您的账户已被封禁，请联系管理员。' });
         }
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.status(200).json({ message: '登录成功！', token, user: { email: user.email, role: user.role } });
+        res.status(200).json({ 
+            message: '登录成功！', 
+            token, 
+            user: { email: user.email, role: user.role, username: user.username } 
+        });
     } catch (error) {
         console.error('登录 API 出错:', error);
         res.status(500).json({ message: '服务器内部错误' });
@@ -246,6 +250,37 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
+app.get('/api/profile', authenticateUser, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT email, username FROM users WHERE id = $1', [req.user.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: '用户不存在。' });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('获取个人资料 API 出错:', error);
+        res.status(500).json({ message: '服务器内部错误' });
+    }
+});
+
+app.post('/api/profile', authenticateUser, async (req, res) => {
+    const { username } = req.body;
+    if (!username || username.trim().length < 2 || username.trim().length > 20) {
+        return res.status(400).json({ message: '昵称长度必须在 2 到 20 个字符之间。' });
+    }
+
+    try {
+        const result = await pool.query('UPDATE users SET username = $1 WHERE id = $2 RETURNING username', [username.trim(), req.user.id]);
+        res.json({ message: '昵称更新成功！', username: result.rows[0].username });
+    } catch (error) {
+        if (error.code === '23505') { // 唯一约束冲突错误码
+            return res.status(409).json({ message: '该昵称已被使用，请换一个。' });
+        }
+        console.error('更新个人资料 API 出错:', error);
+        res.status(500).json({ message: '服务器内部错误，无法更新昵称。' });
+    }
+});
+
 // --- 工单 (Tickets) API ---
 app.post('/api/tickets', authenticateUser, async (req, res) => {
     const { subject, message } = req.body;
@@ -260,15 +295,13 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
         // --- 发送工单回执邮件给用户 ---
         resend.emails.send({
             from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
-            to: [userEmail], // 发送给提交工单的用户
+            to: [userEmail],
             subject: `您的工单已收到: "${subject}"`,
             html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>工单已收到</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">我们已收到您的工单</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">感谢您的联系！我们会尽快处理您的请求。这是您提交内容的副本：</p><div style="font-size: 16px; color: #606770; line-height: 1.6; margin-top: 30px; padding: 20px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;"><p style="margin: 0 0 10px;"><strong>您的邮箱:</strong> ${userEmail}</p><p style="margin: 0 0 10px;"><strong>主题:</strong> ${subject}</p><p style="margin: 0; white-space: pre-wrap;"><strong>内容:</strong><br>${message}</p></div><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
         }).catch(emailError => {
             console.error(`发送工单回执邮件给 ${userEmail} 失败:`, emailError);
         });
         
-        // --- 已移除给管理员发送邮件的逻辑 ---
-
         res.status(201).json({ message: '工单已成功发送！' });
     } catch (error) {
         console.error('创建工单 API 出错:', error);
@@ -280,7 +313,7 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
 app.get('/api/chat/messages', authenticateUser, async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT m.id, m.user_id, m.user_email, m.content, m.created_at FROM messages m ORDER BY m.created_at DESC LIMIT 500'
+            'SELECT m.id, m.user_id, m.user_email, m.content, m.created_at, m.user_username FROM messages m ORDER BY m.created_at DESC LIMIT 500'
         );
         res.json(result.rows.reverse());
     } catch (error) {
@@ -297,9 +330,12 @@ app.post('/api/chat/messages', authenticateUser, async (req, res) => {
     const { id: userId, email: userEmail } = req.user;
 
     try {
+        const userResult = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
+        const username = userResult.rows[0]?.username || null;
+
         const result = await pool.query(
-            'INSERT INTO messages (user_id, user_email, content) VALUES ($1, $2, $3) RETURNING *',
-            [userId, userEmail, content.trim()]
+            'INSERT INTO messages (user_id, user_email, content, user_username) VALUES ($1, $2, $3, $4) RETURNING *',
+            [userId, userEmail, content.trim(), username]
         );
         res.status(201).json(result.rows[0]);
     } catch (error) {

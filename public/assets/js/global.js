@@ -1,106 +1,132 @@
-// public/assets/js/global.js
-// 这个文件包含了所有页面共享的、在 DOM 加载后执行的逻辑
+// This is a self-invoking function to prevent polluting the global namespace.
+(function() {
+    // Wait for the DOM to be fully loaded before trying to find and manipulate elements.
+    document.addEventListener('DOMContentLoaded', () => {
 
-document.addEventListener('DOMContentLoaded', () => {
+        // --- 1. Theme Switcher Logic ---
+        const themeCheckbox = document.getElementById('theme-checkbox');
+        const docElement = document.documentElement; // A more modern approach is to toggle a class on the <html> element.
 
-// 在 global.js 的模块一中
-const themeCheckbox = document.getElementById('theme-checkbox');
-if (themeCheckbox) {
-    // 根据 <html> 元素的 class 初始化切换器的状态
-    themeCheckbox.checked = document.documentElement.classList.contains('light-mode');
+        // Function to apply the chosen theme.
+        const applyTheme = (theme) => {
+            if (theme === 'light') {
+                docElement.classList.add('light-mode');
+                if (themeCheckbox) themeCheckbox.checked = false; // Light mode = unchecked
+            } else {
+                docElement.classList.remove('light-mode');
+                if (themeCheckbox) themeCheckbox.checked = true; // Dark mode = checked
+            }
+        };
 
-    // 添加切换事件
-    themeCheckbox.addEventListener('change', () => {
-        const newTheme = themeCheckbox.checked ? 'light' : 'dark';
-        // 1. 保存新主题到 localStorage
-        localStorage.setItem('theme', newTheme);
-        
-        // 2. 立即应用到当前页面的 <html> 元素
-        if (newTheme === 'light') {
-            document.documentElement.classList.add('light-mode');
-        } else {
-            document.documentElement.classList.remove('light-mode');
-        }
-    });
-}
+        // This relies on `theme-sync.js` for the initial flicker-free load.
+        // This part ensures the checkbox toggle is in the correct state when the page loads.
+        const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        applyTheme(currentTheme);
 
-    // --- 模块二：认证状态与导航栏UI管理 ---
-    function parseJwt(token) {
-        try {
-            return JSON.parse(atob(token.split('.')[1]));
-        } catch (e) {
-            return null;
-        }
-    }
-
-    const userToken = localStorage.getItem('userToken');
-    const loginButton = document.getElementById('login-button');
-    const userDropdown = document.getElementById('user-dropdown');
-
-    if (userToken) {
-        // 用户已登录
-        if (loginButton) loginButton.style.display = 'none';
-        if (userDropdown) userDropdown.style.display = 'block';
-
-        const userData = parseJwt(userToken);
-        const userEmailSpan = document.getElementById('user-email');
-        if (userData && userData.email && userEmailSpan) {
-            userEmailSpan.textContent = userData.email;
+        // Add an event listener to the checkbox to handle theme changes.
+        if (themeCheckbox) {
+            themeCheckbox.addEventListener('change', () => {
+                const newTheme = themeCheckbox.checked ? 'dark' : 'light';
+                localStorage.setItem('theme', newTheme);
+                applyTheme(newTheme);
+            });
         }
 
+        // --- 2. Mobile Navigation (Hamburger Menu) Logic ---
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const navItems = document.getElementById('nav-items');
+
+        if (hamburgerMenu && navItems) {
+            hamburgerMenu.addEventListener('click', () => {
+                navItems.classList.toggle('active');
+            });
+        }
+
+        // --- 3. Authentication UI Management ---
+        const loginButton = document.getElementById('login-button');
+        const userDropdown = document.getElementById('user-dropdown');
         const userDropdownToggle = document.getElementById('user-dropdown-toggle');
         const dropdownMenu = document.getElementById('dropdown-menu');
+        const userEmailSpan = document.getElementById('user-email');
         const logoutButton = document.getElementById('logout-button');
+        const ticketButton = document.getElementById('ticket-button');
 
+        // Function to update the navigation bar based on login state.
+        function updateNavUI(userInfo) {
+            if (loginButton && userDropdown && userEmailSpan) {
+                if (userInfo && userInfo.email) {
+                    // --- Logged-in state ---
+                    loginButton.style.display = 'none';
+                    userDropdown.style.display = 'block';
+                    // Prioritize showing the username, fall back to the email if it doesn't exist.
+                    userEmailSpan.textContent = userInfo.username || userInfo.email; 
+                    if (ticketButton) {
+                        // The ticket button in the contact section should only be visible to logged-in users.
+                        ticketButton.style.display = 'inline-block'; 
+                    }
+                } else {
+                    // --- Logged-out state ---
+                    loginButton.style.display = 'block';
+                    userDropdown.style.display = 'none';
+                    if (ticketButton) {
+                        ticketButton.style.display = 'none'; 
+                    }
+                }
+            }
+        }
+
+        // Function to handle user logout.
+        function logout() {
+            localStorage.removeItem('userToken');
+            localStorage.removeItem('userInfo');
+            window.location.reload(); // Reload the page to reflect the logged-out state.
+        }
+
+        // Logic for toggling the user dropdown menu.
         if (userDropdownToggle && dropdownMenu) {
-            userDropdownToggle.addEventListener('click', (e) => {
-                e.stopPropagation();
+            userDropdownToggle.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent the window click listener from closing it immediately.
                 dropdownMenu.classList.toggle('show');
             });
         }
+
+        // Add click listener for the logout button.
         if (logoutButton) {
-            logoutButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                localStorage.removeItem('userToken');
-                alert('您已成功退出！');
-                window.location.href = '/'; // 退出后返回主页
+            logoutButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                logout();
             });
         }
-    } else {
-        // 用户未登录
-        if (loginButton) loginButton.style.display = 'block';
-        if (userDropdown) userDropdown.style.display = 'none';
-    }
-
-    // 全局点击事件：用于关闭已打开的下拉菜单
-    window.addEventListener('click', (e) => {
-        const dropdownMenu = document.getElementById('dropdown-menu');
-        if (dropdownMenu && dropdownMenu.classList.contains('show') && userDropdown && !userDropdown.contains(e.target)) {
-            dropdownMenu.classList.remove('show');
-        }
-    });
-
-
-    // --- 模块三：工单按钮状态管理 ---
-    const ticketButton = document.getElementById('ticket-button');
-    if (ticketButton) {
-        if (userToken) {
-            ticketButton.textContent = '发送工单';
-            ticketButton.href = 'ticket.html';
-        } else {
-            ticketButton.textContent = '登录以发送工单';
-            ticketButton.href = 'login.html';
-        }
-    }
-
-
-    // --- 模块四：汉堡菜单（移动端导航） ---
-    const hamburgerMenu = document.getElementById('hamburger-menu');
-    const navItems = document.getElementById('nav-items');
-    if (hamburgerMenu && navItems) {
-        hamburgerMenu.addEventListener('click', (e) => {
-            e.stopPropagation();
-            navItems.classList.toggle('active');
+        
+        // Add a global click listener to close the dropdown when clicking anywhere else on the page.
+        window.addEventListener('click', (event) => {
+            if (dropdownMenu && dropdownMenu.classList.contains('show')) {
+                if (!userDropdown.contains(event.target)) {
+                    dropdownMenu.classList.remove('show');
+                }
+            }
         });
-    }
-});
+
+        // Main function to check the login status when any page loads.
+        function checkLoginStatus() {
+            const userInfoStr = localStorage.getItem('userInfo');
+            const userToken = localStorage.getItem('userToken');
+            
+            if (userInfoStr && userToken) {
+                try {
+                    const userInfo = JSON.parse(userInfoStr);
+                    updateNavUI(userInfo);
+                } catch (e) {
+                    // If userInfo in localStorage is corrupted, log the user out.
+                    console.error("Failed to parse user info from localStorage", e);
+                    logout();
+                }
+            } else {
+                updateNavUI(null); // Explicitly set the UI to the logged-out state.
+            }
+        }
+
+        // Run the login check on every page that includes this script.
+        checkLoginStatus();
+    });
+})();

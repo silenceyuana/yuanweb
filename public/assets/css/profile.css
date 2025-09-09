@@ -1,0 +1,56 @@
+/* profile.css - 个人资料页专属样式 */
+
+body { 
+    background-color: var(--bg-color); 
+}
+
+.profile-container { 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    min-height: 100vh; 
+    padding: 1rem; 
+}
+
+.profile-form { 
+    background: var(--section-odd-bg); 
+    padding: 2.5rem; 
+    border-radius: var(--border-radius-main); 
+    width: 100%; 
+    max-width: 420px; 
+    box-shadow: var(--modern-shadow); 
+}
+
+.form-group { 
+    margin-bottom: 1.5rem; 
+}
+
+.form-group label { 
+    display: block; 
+    margin-bottom: .5rem; 
+    color: var(--text-color-primary); 
+    font-weight: 600; 
+}
+
+.form-group input { 
+    width: 100%; 
+    padding: .75rem; 
+    border-radius: var(--border-radius-small); 
+    border: 1px solid var(--border-color); 
+    background-color: var(--bg-color); 
+    color: var(--text-color-primary); 
+    font-size: 1rem;
+}
+
+.form-group input:disabled {
+    background-color: var(--section-odd-bg);
+    color: var(--text-color-secondary);
+    cursor: not-allowed;
+}
+
+#message { 
+    margin-top: 1rem; 
+    text-align: center; 
+    font-weight: bold; 
+    min-height: 1.2em; 
+}

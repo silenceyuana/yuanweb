@@ -68,7 +68,7 @@
             const bubble = document.createElement('div');
             bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
             
-            const sender = isSent ? '你' : msg.user_email.split('@')[0];
+            const sender = isSent ? '你' : (msg.user_username || msg.user_email.split('@')[0]);
             bubble.innerHTML = `
                 <div class="sender">${sender}</div>
                 <div class="content">${msg.content}</div>

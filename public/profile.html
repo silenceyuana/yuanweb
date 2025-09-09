@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>个人资料 - Yuan的个人主页</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="assets/js/theme-sync.js"></script>
+    <link href="assets/css/theme.css" rel="stylesheet" />
+    <link href="assets/css/profile.css" rel="stylesheet" />
+    <link rel="icon" href="assets/img/favicon.ico" />
+</head>
+<body>
+    <div class="profile-container">
+        <div class="profile-form">
+            <h2 class="text-center">编辑个人资料</h2>
+            <div class="form-group">
+                <label for="email">电子邮箱</label>
+                <input type="email" id="email" disabled>
+            </div>
+            <div class="form-group">
+                <label for="username">昵称</label>
+                <input type="text" id="username" placeholder="设置一个昵称（2-20字符）" required minlength="2" maxlength="20">
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="updateProfile()">保存更改</button>
+            <p id="message"></p>
+            <p class="text-center" style="margin-top: 1rem; margin-bottom: 0;"><a href="index.html">返回主页</a></p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const userToken = localStorage.getItem('userToken');
+            if (!userToken) {
+                alert('请先登录！');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const emailEl = document.getElementById('email');
+            const usernameEl = document.getElementById('username');
+            const messageEl = document.getElementById('message');
+
+            try {
+                const response = await fetch('/api/profile', {
+                    headers: { 'Authorization': `Bearer ${userToken}` }
+                });
+
+                if (!response.ok) throw new Error('无法获取您的信息。');
+
+                const data = await response.json();
+                emailEl.value = data.email;
+                usernameEl.value = data.username || '';
+            } catch (error) {
+                messageEl.textContent = error.message;
+                messageEl.style.color = 'red';
+            }
+        });
+
+        async function updateProfile() {
+            const userToken = localStorage.getItem('userToken');
+            const username = document.getElementById('username').value.trim();
+            const messageEl = document.getElementById('message');
+
+            if (username.length < 2 || username.length > 20) {
+                messageEl.textContent = '昵称长度必须在 2 到 20 个字符之间。';
+                messageEl.style.color = 'red';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/profile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${userToken}`
+                    },
+                    body: JSON.stringify({ username })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageEl.textContent = data.message;
+                    messageEl.style.color = 'green';
+                    // 更新本地存储的用户信息
+                    const userInfo = JSON.parse(localStorage.getItem('userInfo'));
+                    if (userInfo) {
+                        userInfo.username = data.username;
+                        localStorage.setItem('userInfo', JSON.stringify(userInfo));
+                    }
+                } else {
+                    throw new Error(data.message || '更新失败。');
+                }
+            } catch (error) {
+                messageEl.textContent = error.message;
+                messageEl.style.color = 'red';
+            }
+        }
+    </script>
+</body>
+</html>
