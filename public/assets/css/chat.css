@@ -1,4 +1,4 @@
-/* chat.css - 聊天界面专属样式 */
+/* chat.css - 聊天界面专属样式 (已修复桌面端全屏问题) */
 
 body, html {
     height: 100%;
@@ -11,9 +11,9 @@ body, html {
     height: 100vh;
     background-color: var(--bg-color);
     color: var(--text-color-primary);
-    max-width: 800px;
-    margin: 0 auto;
-    box-shadow: 0 0 30px rgba(0,0,0,0.1);
+    max-width: 100%; /* 修正: 允许全屏宽度 */
+    margin: 0;         /* 修正: 移除水平居中 */
+    box-shadow: none;  /* 修正: 移除阴影 */
 }
 
 .chat-header {
@@ -24,6 +24,17 @@ body, html {
     background-color: var(--section-odd-bg);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+    /* 为了内容的可读性，在头部内部再加一个容器限制内容宽度 */
+    width: 100%;
+}
+
+.chat-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
 }
 
 .chat-header h1 {
@@ -43,6 +54,10 @@ body, html {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    /* 限制消息区域的最大宽度，使其更易读 */
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
 }
 
 .loading-indicator {
@@ -103,6 +118,9 @@ body, html {
 .chat-form {
     display: flex;
     gap: 0.75rem;
+    /* 同样限制输入区域的最大宽度 */
+    max-width: 800px;
+    margin: 0 auto;
 }
 
 .chat-form input {
@@ -140,12 +158,9 @@ body, html {
 
 /* 移动端适配 */
 @media (max-width: 767.98px) {
-    .chat-container {
-        max-width: 100%;
-        box-shadow: none;
-    }
-    .chat-header, .chat-messages, .chat-input-area {
-        padding: 1rem;
+    .chat-header, .chat-messages, .chat-input-area, .chat-header-content {
+        padding-left: 1rem;
+        padding-right: 1rem;
     }
     .message-bubble {
         max-width: 85%;
