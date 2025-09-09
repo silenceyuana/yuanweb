@@ -257,16 +257,18 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     try {
         await pool.query(sql, [userId, userEmail, subject, message]);
 
-        // --- 发送工单成功后给管理员发送通知邮件 ---
+        // --- 发送工单回执邮件给用户 ---
         resend.emails.send({
-            from: `YUAN的网站-系统通知 <${process.env.MAIL_FROM_ADDRESS}>`,
-            to: [process.env.MAIL_FROM_ADDRESS],
-            subject: `新工单提醒: ${subject}`,
-            html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>新工单提醒</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 25px;">新工单提醒</h1><div style="font-size: 16px; color: #606770; line-height: 1.6;"><p style="margin: 0 0 10px;"><strong>来自用户:</strong> ${userEmail}</p><p style="margin: 0 0 10px;"><strong>主题:</strong> ${subject}</p><p style="margin: 0; white-space: pre-wrap; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px;">${message}</p></div><div style="text-align: center; margin: 30px 0;"><a href="${process.env.BASE_URL}/admin-dashboard.html" style="background-color: #0d6efd; color: white; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">查看后台面板</a></div><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
+            from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
+            to: [userEmail], // 发送给提交工单的用户
+            subject: `您的工单已收到: "${subject}"`,
+            html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>工单已收到</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">我们已收到您的工单</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">感谢您的联系！我们会尽快处理您的请求。这是您提交内容的副本：</p><div style="font-size: 16px; color: #606770; line-height: 1.6; margin-top: 30px; padding: 20px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;"><p style="margin: 0 0 10px;"><strong>您的邮箱:</strong> ${userEmail}</p><p style="margin: 0 0 10px;"><strong>主题:</strong> ${subject}</p><p style="margin: 0; white-space: pre-wrap;"><strong>内容:</strong><br>${message}</p></div><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
         }).catch(emailError => {
-            console.error('发送新工单通知邮件失败:', emailError);
+            console.error(`发送工单回执邮件给 ${userEmail} 失败:`, emailError);
         });
         
+        // --- 已移除给管理员发送邮件的逻辑 ---
+
         res.status(201).json({ message: '工单已成功发送！' });
     } catch (error) {
         console.error('创建工单 API 出错:', error);
@@ -274,14 +276,12 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     }
 });
 
-// --- 新增: 聊天 (Chat) API ---
+// --- 聊天 (Chat) API ---
 app.get('/api/chat/messages', authenticateUser, async (req, res) => {
     try {
-        // 获取最新的 500 条消息，按时间升序排列
         const result = await pool.query(
             'SELECT m.id, m.user_id, m.user_email, m.content, m.created_at FROM messages m ORDER BY m.created_at DESC LIMIT 500'
         );
-        // 前端需要正序显示，所以反转数组
         res.json(result.rows.reverse());
     } catch (error) {
         console.error('获取聊天消息 API 出错:', error);
@@ -297,7 +297,6 @@ app.post('/api/chat/messages', authenticateUser, async (req, res) => {
     const { id: userId, email: userEmail } = req.user;
 
     try {
-        // 插入消息到数据库，Supabase Realtime 会自动广播
         const result = await pool.query(
             'INSERT INTO messages (user_id, user_email, content) VALUES ($1, $2, $3) RETURNING *',
             [userId, userEmail, content.trim()]
