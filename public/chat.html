@@ -6,163 +6,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="assets/js/theme-sync.js"></script>
     <link href="assets/css/theme.css" rel="stylesheet" />
-    <link href="assets/css/chat.css" rel="stylesheet" /> 
+    <link href="assets/css/chat.css" rel="stylesheet" />
     <link rel="icon" href="assets/img/favicon.ico" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-    <div class="chat-container">
-        <header class="chat-header">
-
-            <div class="chat-header-content">
-                <h1>聊天室</h1>
-                <a href="index.html" class="back-link">返回主页</a>
+    <div class="chat-layout">
+        <!-- 左侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <input type="search" id="search-input" placeholder="搜索用户...">
             </div>
-        </header>
-        <main class="chat-messages" id="messages-container">
+            <div class="search-results" id="search-results">
+                <!-- 搜索结果动态添加 -->
+            </div>
+            <div class="conversations-list" id="conversations-list">
+                <!-- 对话列表动态添加 -->
+            </div>
+        </aside>
 
-            <div class="loading-indicator">正在连接聊天室...</div>
-        </main>
-        <footer class="chat-input-area">
-            <form id="message-form" class="chat-form">
-                <input type="text" id="message-input" placeholder="输入消息..." autocomplete="off" required>
-                <button type="submit">发送</button>
-            </form>
-        </footer>
+        <!-- 右侧聊天区域 -->
+        <div class="chat-area">
+            <header class="chat-header">
+                <div class="menu-toggle" id="menu-toggle">☰</div> <!-- 移动端菜单按钮 -->
+                <h2 id="chat-title">公开聊天室</h2>
+                <a href="index.html" class="back-link">返回主页</a>
+            </header>
+            <main class="chat-messages" id="messages-container">
+                <div class="loading-indicator">正在连接聊天室...</div>
+            </main>
+            <footer class="chat-input-area">
+                <form id="message-form" class="chat-form">
+                    <input type="text" id="message-input" placeholder="输入消息..." autocomplete="off" required>
+                    <button type="submit">发送</button>
+                </form>
+            </footer>
+        </div>
     </div>
 
-   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const userToken = localStorage.getItem('userToken');
-        if (!userToken) {
-            alert('请先登录后再访问此页面！');
-            window.location.href = 'login.html';
-            return;
-        }
-
-        const messagesContainer = document.getElementById('messages-container');
-        const messageForm = document.getElementById('message-form');
-        const messageInput = document.getElementById('message-input');
-        const loadingIndicator = document.querySelector('.loading-indicator');
-
-        // 修正 1：重命名局部变量，避免与全局 supabase 对象冲突
-        let supabaseClient; 
-        let currentUserEmail = '';
-
-        try {
-            const payload = JSON.parse(atob(userToken.split('.')[1]));
-            currentUserEmail = payload.email;
-        } catch (e) {
-            console.error("无法解析 Token:", e);
-            localStorage.removeItem('userToken');
-            window.location.href = 'login.html';
-            return;
-        }
-        
-        const scrollToBottom = () => {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        };
-
-        const displayMessage = (msg) => {
-            const isSent = msg.user_email === currentUserEmail;
-            const bubble = document.createElement('div');
-            bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
-            
-            const sender = isSent ? '你' : (msg.user_username || msg.user_email.split('@')[0]);
-            bubble.innerHTML = `
-                <div class="sender">${sender}</div>
-                <div class="content">${msg.content}</div>
-                <div class="timestamp">${new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div>
-            `;
-            messagesContainer.appendChild(bubble);
-        };
-
-        const initializeSupabase = async (url, key) => {
-            // 修正 2：使用全局 supabase 对象来创建客户端实例
-            supabaseClient = supabase.createClient(url, key, {
-                global: { headers: { Authorization: `Bearer ${userToken}` } }
-            });
-
-            supabaseClient.channel('public:messages')
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-                    // 确保不是自己刚刚发送的消息才再次显示（避免重复）
-                    if (payload.new.user_email !== currentUserEmail || payload.commit_timestamp !== null) {
-                        displayMessage(payload.new);
-                        scrollToBottom();
-                    }
-                })
-                .subscribe();
-        };
-
-        async function main() {
-            try {
-                const configRes = await fetch('/api/config');
-                const config = await configRes.json();
-                await initializeSupabase(config.supabaseUrl, config.supabaseAnonKey);
-            } catch (err) {
-                // 修正 3：在控制台打印出具体错误，方便调试
-                console.error("初始化实时服务失败:", err); 
-                loadingIndicator.textContent = "无法连接到实时服务。";
-                return;
-            }
-            
-            try {
-                const res = await fetch('/api/chat/messages', {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
-                if (!res.ok) throw new Error('获取历史消息失败');
-                
-                const messages = await res.json();
-                loadingIndicator.style.display = 'none';
-                messages.forEach(displayMessage);
-                scrollToBottom();
-            } catch (err) {
-                console.error("获取历史消息失败:", err);
-                loadingIndicator.textContent = err.message;
-            }
-        }
-
-        messageForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const content = messageInput.value.trim();
-            if (!content) return;
-
-            // 临时创建一个消息气泡，立即显示
-            const tempMessage = {
-                user_email: currentUserEmail,
-                content: content,
-                created_at: new Date().toISOString()
-            };
-            displayMessage(tempMessage);
-            scrollToBottom();
-
-            const originalMessage = messageInput.value;
-            messageInput.value = ''; // 立即清空输入框
-
-            try {
-                const response = await fetch('/api/chat/messages', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${userToken}`
-                    },
-                    body: JSON.stringify({ content })
-                });
-
-                if (!response.ok) {
-                    // 如果发送失败，恢复输入框内容
-                    throw new Error("发送失败");
-                }
-            } catch (err) {
-                alert('消息发送失败，请重试。');
-                messageInput.value = originalMessage; // 恢复输入
-            } finally {
-                messageInput.focus();
-            }
+    <!-- 引入新的 JS 文件 -->
+    <script src="assets/js/chat.js"></script>
+    <script>
+        // 移动端菜单切换逻辑
+        document.getElementById('menu-toggle')?.addEventListener('click', () => {
+            document.querySelector('.sidebar')?.classList.toggle('active');
         });
-
-        main();
-    });
-</script>
+    </script>
 </body>
 </html>
