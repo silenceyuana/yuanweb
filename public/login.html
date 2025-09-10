@@ -63,7 +63,7 @@
                 // 登录成功，保存用户的 Token
                 localStorage.setItem('userToken', data.token);
                 
-                // **关键修正**: 将后端返回的完整用户信息也保存到 localStorage
+                // 新增: 将完整的用户信息也保存到 localStorage
                 localStorage.setItem('userInfo', JSON.stringify(data.user)); 
                 
                 setTimeout(() => { window.location.href = 'index.html'; }, 1500);
