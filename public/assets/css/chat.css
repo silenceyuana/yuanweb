@@ -1,9 +1,9 @@
-/* chat.css - 全新响应式聊天界面样式 */
+/* chat.css - 全新响应式聊天界面样式 (UI 优化版) */
 
 :root {
     --sidebar-width: 280px;
     --chat-header-height: 65px;
-    --chat-input-height: 70px;
+    --chat-input-height: 80px; /* 增加高度以容纳美化后的输入框 */
 }
 
 body, html {
@@ -26,6 +26,7 @@ body, html {
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
+    transition: transform 0.3s ease-in-out;
 }
 
 .sidebar-header {
@@ -99,9 +100,6 @@ body, html {
     overflow: hidden;
 }
 
-.search-results {
-    /* 搜索结果样式，与对话列表类似 */
-}
 
 /* --- Chat Area (右侧聊天区) --- */
 .chat-area {
@@ -120,11 +118,20 @@ body, html {
     border-bottom: 1px solid var(--border-color);
     height: var(--chat-header-height);
 }
+.chat-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 900px; /* 稍微加宽以适应大屏 */
+    margin: 0 auto;
+}
 .chat-header h2 {
     font-size: 1.2rem;
     margin: 0;
+    color: var(--text-color-primary);
 }
-.back-link { font-size: 0.9rem; }
+.back-link { font-size: 0.9rem; font-weight: 500; }
 
 .chat-messages {
     flex-grow: 1;
@@ -133,47 +140,143 @@ body, html {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
 }
 
-/* 消息气泡样式 (与之前版本相同) */
-.message-bubble { /* ... */ }
-.received { /* ... */ }
-.sent { /* ... */ }
+.loading-indicator {
+    text-align: center;
+    color: var(--text-color-secondary);
+    margin: auto;
+}
 
+.message-bubble {
+    max-width: 75%;
+    padding: 0.75rem 1rem;
+    border-radius: 1.25rem;
+    line-height: 1.5;
+    word-wrap: break-word;
+}
+.message-bubble .sender {
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    opacity: 0.8;
+}
+.message-bubble .content {
+    font-size: 1rem;
+}
+.message-bubble .timestamp {
+    font-size: 0.75rem;
+    text-align: right;
+    margin-top: 0.25rem;
+    opacity: 0.6;
+}
+
+.received {
+    align-self: flex-start;
+    background-color: var(--section-odd-bg);
+    border-bottom-left-radius: 0.25rem;
+}
+
+.sent {
+    align-self: flex-end;
+    background-color: var(--primary-color);
+    color: white;
+    border-bottom-right-radius: 0.25rem;
+}
+.sent .sender, .sent .timestamp {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* --- 输入区域 UI 优化 --- */
 .chat-input-area {
     padding: 1rem 1.5rem;
     background-color: var(--section-odd-bg);
     border-top: 1px solid var(--border-color);
     height: var(--chat-input-height);
 }
-.chat-form { /* ... */ }
 
-/* 移动端适配 */
+.chat-form {
+    display: flex;
+    gap: 0.75rem;
+    max-width: 900px;
+    margin: 0 auto;
+    align-items: center;
+}
+
+.chat-form input {
+    flex-grow: 1;
+    padding: 0.75rem 1.25rem; /* 增加内边距 */
+    border-radius: 50px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-color);
+    color: var(--text-color-primary);
+    font-size: 1rem;
+    transition: border-color var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
+}
+.chat-form input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+/* 使用 theme.css 中的 .btn 样式 */
+.chat-form .btn {
+    padding: 0.75rem 1.5rem;
+    flex-shrink: 0; /* 防止按钮被压缩 */
+}
+
+.chat-form input:disabled, .chat-form button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* --- 移动端适配与汉堡菜单 --- */
+.hamburger-menu { 
+    display: none; /* 默认隐藏 */
+    cursor: pointer; 
+    background: none; 
+    border: none; 
+    font-size: 1.5rem; 
+    color: var(--text-color-primary);
+}
+
 @media (max-width: 767.98px) {
     .sidebar {
-        position: absolute;
+        position: fixed; /* 改为 fixed 以覆盖所有内容 */
         left: 0;
         top: 0;
         bottom: 0;
         transform: translateX(-100%);
-        transition: transform 0.3s ease-in-out;
         z-index: 1001;
         width: 80%;
     }
     .sidebar.active {
         transform: translateX(0);
     }
-    .chat-header {
+    .chat-header-content {
+        justify-content: flex-start; /* 左对齐 */
         position: relative;
     }
-    .menu-toggle { /* 汉堡菜单按钮 */
-        display: block;
-        font-size: 1.5rem;
-        cursor: pointer;
-        position: absolute;
-        left: 1rem;
+    .hamburger-menu {
+        display: block; /* 在移动端显示 */
     }
     .chat-header h2 {
-        margin: 0 auto; /* 标题居中 */
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+    .chat-header .back-link {
+        margin-left: auto; /* 推到最右边 */
+    }
+    
+    .chat-header, .chat-messages, .chat-input-area {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    .message-bubble {
+        max-width: 85%;
     }
 }

@@ -1,4 +1,4 @@
-/* theme.css (Optimized Version) */
+/* theme.css (Optimized Version - With Mobile Menu Fix) */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
 
 /* ===============================================*/
@@ -117,7 +117,6 @@ section {
   transition: background-color var(--transition-speed) ease; 
 }
 
-/* 使用类名代替伪类，更明确 */
 .section-colored { 
   background-color: var(--section-odd-bg); 
 }
@@ -195,7 +194,7 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
 .user-dropdown-toggle .fa-user-circle { font-size: 1.2rem; }
 .user-dropdown-toggle span { font-weight: 600; max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dropdown-menu { 
-  display: block; /* 改为 block 以便使用 transform */
+  display: block; 
   position: absolute; 
   top: calc(100% + 10px); 
   right: 0; 
@@ -206,7 +205,6 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
   min-width: 160px; 
   z-index: 1000; 
   overflow: hidden; 
-  /* 新增动画效果 */
   opacity: 0;
   transform: translateY(10px);
   visibility: hidden;
@@ -227,7 +225,6 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
 /* --- Hero Section (#home) --- */
 .hero-content { min-height: 80vh; display: flex; flex-direction: column; justify-content: center; align-items: center; }
 .hero-subtitle { max-width: 600px; font-weight: 300; }
-/* 用于包裹按钮，实现灵活间距 */
 .hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;}
 
 /* --- About Section (#about) --- */
@@ -243,9 +240,9 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
   border-radius: var(--border-radius-main);
   padding: 2rem;
   height: 100%;
-  display: flex; /* 使用 Flexbox 确保内部元素对齐 */
+  display: flex;
   flex-direction: column;
-  gap: 1rem; /* 统一内部间距 */
+  gap: 1rem;
   transition: transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
   margin-bottom: 2rem;
 }
@@ -254,7 +251,7 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
 .card-icon { font-size: 1.5rem; color: var(--primary-color); }
 .card-title { margin: 0; font-weight: 500; }
 .card-description { flex-grow: 1; font-size: 0.95rem; margin: 0; }
-.card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; /* 将 footer 推到底部 */ }
+.card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; }
 .tech-tag { background-color: rgba(129, 140, 248, 0.1); color: var(--primary-color); font-size: 0.8rem; font-weight: 500; padding: 0.25rem 0.75rem; border-radius: 50px; }
 .project-link { font-size: 1.25rem; color: var(--text-color-secondary); transition: color var(--transition-speed) ease; }
 .project-link:hover { color: var(--primary-color); }
@@ -287,38 +284,56 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
 .delay-3 { animation-delay: 0.6s; }
 
 /* ===============================================*/
-/*    8. 响应式设计
+/*    8. 响应式设计 (Responsive)
 /* ===============================================*/
-.hamburger-menu { display: none; }
+.hamburger-menu { 
+  display: none; 
+  cursor: pointer; 
+  background: none; 
+  border: none; 
+  font-size: 1.5rem; 
+  color: var(--text-color-primary);
+}
+
 @media (max-width: 767.98px) {
-    .nav-items { 
-      display: none; 
-      flex-direction: column; 
-      align-items: flex-start; 
-      gap: 1rem; 
-      width: 100%; 
-      
-      /* --- 关键修复：确保背景色为页面主背景色，使其完全不透明 --- */
-      background-color: var(--bg-color); 
-      
-      position: absolute; 
-      top: 100%; 
-      left: 0; 
-      padding: 1.5rem; 
-      border-top: 1px solid var(--border-color); 
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-    }
-    .nav-items.active { display: flex; }
-    .nav-items ul { flex-direction: column; align-items: flex-start; width: 100%; gap: 0; }
-    .nav-items ul li { width: 100%; }
-    .navbar .nav-link { display: block; padding: 0.75rem 0; }
-    .hamburger-menu { display: block; cursor: pointer; background: none; border: none; font-size: 1.5rem; color: var(--text-color-primary); }
-    h1, .h1 { font-size: clamp(2rem, 8vw, 2.5rem); }
-    h2, .h2 { font-size: clamp(1.5rem, 6vw, 2rem); }
-    section { padding: 4rem 0; }
-    .hero-content { min-height: 60vh; }
-    #about .row { flex-direction: column; gap: 2rem; }
-    #about .col-lg-6:last-child { text-align: center; }
-    .project-card { margin-bottom: 1.5rem; }
-    #contact .mt-5 a { display: block; margin: 0 0 1rem 0 !important; }
+  /* --- Base & Typography --- */
+  :is(h1, .h1) { font-size: clamp(2rem, 8vw, 2.5rem); }
+  :is(h2, .h2) { font-size: clamp(1.5rem, 6vw, 2rem); }
+  section { padding: 4rem 0; }
+  
+  /* --- Navbar & Mobile Menu --- */
+  .hamburger-menu { display: block; }
+  .nav-items { 
+    display: none; 
+    flex-direction: column; 
+    align-items: flex-start; 
+    gap: 1rem; 
+    width: 100%; 
+    background-color: var(--bg-color); /* 关键修复：确保背景不透明 */
+    position: absolute; 
+    top: 100%; 
+    left: 0; 
+    padding: 1.5rem; 
+    border-top: 1px solid var(--border-color); 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+  }
+  .nav-items.active { display: flex; }
+  .nav-items ul { flex-direction: column; align-items: flex-start; width: 100%; gap: 0; }
+  .nav-items ul li { width: 100%; }
+  .navbar .nav-link { display: block; padding: 0.75rem 0; }
+
+  /* --- Sections --- */
+  .hero-content { min-height: 60vh; }
+  #about .row { flex-direction: column; gap: 2rem; }
+  #about .col-lg-6:last-child { text-align: center; }
+  .project-card { margin-bottom: 1.5rem; }
+  .contact-actions, .hero-actions { 
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+  }
+  .contact-actions a, .hero-actions a {
+    width: 100%; 
+    max-width: 300px;
+  }
 }
