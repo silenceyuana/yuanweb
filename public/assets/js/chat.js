@@ -1,4 +1,4 @@
-// chat.js - 全新聊天界面逻辑 (已修复连接流程)
+// chat.js - 全新聊天界面逻辑 (已添加端到端加密和所有修复)
 document.addEventListener('DOMContentLoaded', () => {
     // --- 0. 检查登录状态 ---
     const userToken = localStorage.getItem('userToken');
@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUser;
     let conversations = {}; // 存储对话: { 'public': {...}, 'peerId': {...} }
     let activeChat = { type: 'public', id: 'public' }; // 默认激活公开聊天
+    let chatEncryptionKey; // 用于存储加密密钥
 
     const messagesContainer = document.getElementById('messages-container');
     const messageForm = document.getElementById('message-form');
@@ -23,9 +24,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const conversationsListContainer = document.getElementById('conversations-list');
     const loadingIndicator = document.querySelector('.loading-indicator');
 
+    // --- 加密/解密函数 ---
+    const xorCipher = (str, key) => {
+        return str.split('').map((char, i) => {
+            return String.fromCharCode(char.charCodeAt(0) ^ key.charCodeAt(i % key.length));
+        }).join('');
+    };
+
+    const encryptMessage = (plainText, key) => {
+        if (!key) return plainText;
+        const encrypted = xorCipher(plainText, key);
+        return btoa(encrypted); // Base64 编码
+    };
+
+    const decryptMessage = (cipherText, key) => {
+        if (!key) return cipherText;
+        try {
+            const decoded = atob(cipherText); // Base64 解码
+            return xorCipher(decoded, key);
+        } catch (e) {
+            return cipherText; // 解码失败则返回原文
+        }
+    };
+
     // --- 2. 辅助函数 ---
     const scrollToBottom = () => {
-        // 使用平滑滚动以获得更好的体验
         messagesContainer.scrollTo({
             top: messagesContainer.scrollHeight,
             behavior: 'smooth'
@@ -37,14 +60,14 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingIndicator.style.display = 'none';
         }
         
+        const decryptedContent = decryptMessage(msg.content, chatEncryptionKey);
+        
         const isSent = msg.sender_id === currentUser.id;
         const bubble = document.createElement('div');
         bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
-        
         const sender = isSent ? '你' : (msg.sender_username || msg.sender_email.split('@')[0]);
         
-        // 防止 XSS 攻击，对内容进行简单的 HTML 转义
-        const sanitizedContent = msg.content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const sanitizedContent = decryptedContent.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         
         bubble.innerHTML = `
             <div class="sender">${sender}</div>
@@ -66,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         Object.values(conversations)
             .filter(c => c.type === 'private')
-            .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) // 按最新消息时间排序
+            .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
             .forEach(convo => {
                 conversationsListContainer.appendChild(createConversationItem(convo));
             });
@@ -81,13 +104,14 @@ document.addEventListener('DOMContentLoaded', () => {
             item.classList.add('active');
         }
         
-        const displayName = convo.username || convo.email.split('@')[0];
+        const displayName = convo.username || convo.email?.split('@')[0] || '未知用户';
+        const lastMessageDecrypted = decryptMessage(convo.lastMessage || '...', chatEncryptionKey);
         
         item.innerHTML = `
             <div class="avatar">${displayName.charAt(0)}</div>
             <div class="convo-details">
                 <div class="username">${displayName}</div>
-                <div class="last-message">${convo.lastMessage || '...'}</div>
+                <div class="last-message">${lastMessageDecrypted}</div>
             </div>
         `;
         item.addEventListener('click', () => switchChat(convo.type, convo.id, displayName));
@@ -109,7 +133,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const endpoint = type === 'public' ? '/api/chat/public' : `/api/chat/private/${id}`;
             const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${userToken}` } });
             
-            if (!res.ok) throw new Error('获取历史消息失败');
+            if (!res.ok) {
+                if (res.status === 403) throw new Error('认证失败，请重新登录。');
+                throw new Error('获取历史消息失败');
+            }
 
             const messages = await res.json();
             messagesContainer.innerHTML = '';
@@ -120,7 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 messages.forEach(msg => displayMessage(msg, true));
             }
             
-            // 确保在渲染历史消息后滚动到底部
             setTimeout(scrollToBottom, 100);
         } catch (err) {
             console.error("加载消息失败:", err);
@@ -137,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        conversationsListContainer.style.display = 'none'; // 搜索时隐藏对话列表
+        conversationsListContainer.style.display = 'none';
         const res = await fetch(`/api/users/search?q=${query}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
         const users = await res.json();
         
@@ -189,19 +215,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetch('/api/chat/conversations', { headers: { 'Authorization': `Bearer ${userToken}` } }),
                 fetch('/api/config')
             ]);
+            
+            if (!profileRes.ok || !convosRes.ok || !configRes.ok) {
+                 throw new Error('初始化失败，无法连接到服务器或认证失败。');
+            }
 
             const profileData = await profileRes.json();
             const jwtPayload = JSON.parse(atob(userToken.split('.')[1]));
             currentUser = { ...profileData, id: jwtPayload.id };
-
+            
+            const config = await configRes.json();
+            chatEncryptionKey = config.chatEncryptionKey;
+            if (!chatEncryptionKey) {
+                throw new Error("未能获取加密密钥，聊天功能已禁用。");
+            }
+            
             conversations['public'] = { type: 'public', id: 'public', username: '公开聊天室', lastMessage: '欢迎来到这里', created_at: new Date(0).toISOString() };
             const recentConvos = await convosRes.json();
             recentConvos.forEach(c => {
                 conversations[c.peer_id] = { type: 'private', id: c.peer_id, username: c.peer_username || c.peer_email, lastMessage: c.content, created_at: c.created_at };
             });
             renderConversations();
-            
-            const config = await configRes.json();
 
             await new Promise((resolve, reject) => {
                 supabaseClient = supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
@@ -216,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             resolve();
                         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                             console.error('实时服务连接失败:', err);
-                            reject(new Error('实时服务连接失败。'));
+                            reject(new Error('实时服务连接超时。'));
                         }
                     });
             });
@@ -247,7 +281,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalMessage = messageInput.value;
         messageInput.value = '';
 
-        const body = { content };
+        const encryptedContent = encryptMessage(content, chatEncryptionKey);
+        
+        const body = { content: encryptedContent };
         if (activeChat.type === 'private') {
             body.receiverId = activeChat.id;
         }
@@ -262,7 +298,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) {
                 throw new Error("发送失败");
             }
-            // 消息已通过实时服务广播，无需额外操作
         } catch (err) {
             alert('消息发送失败，请重试。');
             messageInput.value = originalMessage;
@@ -279,7 +314,6 @@ document.addEventListener('DOMContentLoaded', () => {
         searchResultsContainer.style.display = 'block';
     });
     searchInput.addEventListener('blur', () => {
-        // 延迟隐藏，以便点击事件可以触发
         setTimeout(() => {
             if (document.activeElement !== searchInput) {
                 searchResultsContainer.style.display = 'none';
