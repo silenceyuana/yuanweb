@@ -26,7 +26,8 @@ const PORT = process.env.PORT || 3000;
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
-    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS'
+    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS',
+    'CHAT_ENCRYPTION_KEY' // 检查聊天加密密钥
 ];
 
 for (const varName of requiredEnvVars) {
@@ -39,11 +40,7 @@ for (const varName of requiredEnvVars) {
 // ======================================================
 // --- 3. 第三方服务与数据库连接 ---
 // ======================================================
-
-// --- Supabase / PostgreSQL 连接 ---
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-// --- Resend (Email) 连接 ---
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = {};
 
@@ -96,7 +93,8 @@ const authenticateAdmin = (req, res, next) => {
 app.get('/api/config', (req, res) => {
     res.json({ 
         supabaseUrl: process.env.SUPABASE_URL, 
-        supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+        supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+        chatEncryptionKey: process.env.CHAT_ENCRYPTION_KEY // 将密钥发送给前端
     });
 });
 
@@ -292,7 +290,6 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     try {
         await pool.query(sql, [userId, userEmail, subject, message]);
 
-        // 发送工单回执邮件给用户
         resend.emails.send({
             from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
             to: [userEmail],
