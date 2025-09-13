@@ -15,7 +15,6 @@ const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const axios = require('axios');
 const { Resend } = require('resend');
-const { createClient } = require('@supabase/supabase-js'); // 新增
 
 // ======================================================
 // --- 2. 应用初始化与环境变量检查 ---
@@ -28,8 +27,7 @@ const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
     'RESEND_API_KEY', 'MAIL_FROM_ADDRESS',
-    'CHAT_ENCRYPTION_KEY',
-    'SUPABASE_SERVICE_KEY' // 新增：确保服务端密钥存在
+    'CHAT_ENCRYPTION_KEY' // 检查聊天加密密钥
 ];
 
 for (const varName of requiredEnvVars) {
@@ -45,9 +43,6 @@ for (const varName of requiredEnvVars) {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = {};
-
-// 新增：初始化 Supabase 服务端 Admin Client
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 // ======================================================
 // --- 4. 中间件配置 ---
@@ -99,7 +94,7 @@ app.get('/api/config', (req, res) => {
     res.json({ 
         supabaseUrl: process.env.SUPABASE_URL, 
         supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
-        chatEncryptionKey: process.env.CHAT_ENCRYPTION_KEY
+        chatEncryptionKey: process.env.CHAT_ENCRYPTION_KEY // 将密钥发送给前端
     });
 });
 
@@ -129,11 +124,8 @@ app.post('/api/send-verification-code', async (req, res) => {
     }
 });
 
-// --- 关键修改：重写注册路由 ---
 app.post('/api/register', async (req, res) => {
     const { email, password, code, turnstileToken } = req.body;
-    
-    // 人机验证
     if (!turnstileToken) {
         return res.status(400).json({ message: '人机验证失败，请刷新重试。' });
     }
@@ -150,8 +142,6 @@ app.post('/api/register', async (req, res) => {
         console.error('Turnstile 验证出错:', error);
         return res.status(500).json({ message: '人机验证服务暂时不可用。' });
     }
-
-    // 字段和验证码校验
     if (!email || !password || !code || password.length < 6) {
         return res.status(400).json({ message: '邮箱、验证码和密码不能为空，且密码至少为6位！' });
     }
@@ -159,34 +149,16 @@ app.post('/api/register', async (req, res) => {
     if (!storedCode || Date.now() > storedCode.expires || storedCode.code !== code) {
         return res.status(400).json({ message: '验证码无效或已过期！' });
     }
-
     try {
-        // 1. 在 Supabase Auth 中创建用户
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-            email: email,
-            password: password,
-            email_confirm: true, // 自动确认邮箱
-        });
-
-        if (authError) {
-            if (authError.message && authError.message.includes("User already registered")) {
-                return res.status(409).json({ message: '该邮箱已被注册！' });
-            }
-            console.error('Supabase Auth 创建用户失败:', authError);
-            throw new Error('认证服务出错，注册失败。');
+        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (existingUser.rows.length > 0) {
+            return res.status(409).json({ message: '该邮箱已被注册！' });
         }
-
-        const authUserId = authData.user.id; // 获取 Supabase 返回的 UUID
-
-        // 2. 在你自己的 public.users 表中创建用户记录
         const hashedPassword = bcrypt.hashSync(password, 10);
-        // 同时插入 email, password 和从 Supabase 获取的 user_uuid
-        const insertQuery = 'INSERT INTO users (email, password, user_uuid) VALUES ($1, $2, $3)';
-        await pool.query(insertQuery, [email, hashedPassword, authUserId]);
-        
-        delete verificationCodes[email]; // 清除验证码
+        await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, hashedPassword]);
+        delete verificationCodes[email];
 
-        // 3. 发送欢迎邮件
+        // 注册成功后发送欢迎邮件
         try {
             await resend.emails.send({
                 from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
@@ -199,23 +171,9 @@ app.post('/api/register', async (req, res) => {
         }
         
         res.status(201).json({ message: '注册成功！' });
-
     } catch (error) {
         console.error('注册 API 出错:', error);
-        // 错误回滚：如果 public.users 插入失败 (例如 email 重复)，需要删除刚在 Supabase Auth 创建的用户
-        if (error.code === '23505') { // PostgreSQL a unique_violation
-            try {
-                const { data: { user } } = await supabase.auth.admin.getUserByEmail(email);
-                if (user) {
-                    await supabase.auth.admin.deleteUser(user.id);
-                    console.log(`已回滚，删除 Supabase Auth 用户: ${email}`);
-                }
-            } catch(rollbackError) {
-                console.error('回滚删除 Supabase Auth 用户失败:', rollbackError);
-            }
-            return res.status(409).json({ message: '该邮箱已被注册！' });
-        }
-        res.status(500).json({ message: '服务器内部错误，注册失败。' });
+        res.status(500).json({ message: '服务器内部错误' });
     }
 });
 
@@ -271,7 +229,6 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 });
 
-// --- 关键修改：增强密码重置路由 ---
 app.post('/api/reset-password', async (req, res) => {
     const { token, newPassword } = req.body;
     if (!token || !newPassword || newPassword.length < 6) {
@@ -279,31 +236,8 @@ app.post('/api/reset-password', async (req, res) => {
     }
     try {
         const decoded = jwt.verify(token, process.env.PASSWORD_RESET_SECRET);
-        
-        // 1. 在你自己的 users 表中更新密码
         const hashedPassword = bcrypt.hashSync(newPassword, 10);
-        const { rows } = await pool.query('UPDATE users SET password = $1 WHERE id = $2 RETURNING user_uuid', [hashedPassword, decoded.id]);
-
-        if (rows.length === 0) {
-            return res.status(404).json({ message: '未找到用户。' });
-        }
-        
-        const userUuid = rows[0].user_uuid;
-
-        // 2. 关键新增：在 Supabase Auth 中也更新该用户的密码
-        if (userUuid) {
-            const { error: updateError } = await supabase.auth.admin.updateUserById(
-                userUuid,
-                { password: newPassword }
-            );
-            if (updateError) {
-                console.error(`在 Supabase Auth 中更新用户 ${userUuid} 的密码失败:`, updateError);
-                // 即使这里失败，我们仍然让用户成功，因为主数据库已更新
-            }
-        } else {
-            console.warn(`用户 ID ${decoded.id} 缺少 user_uuid，无法在 Supabase Auth 中同步密码。`);
-        }
-
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
         res.status(200).json({ message: '密码已成功重置！您现在可以用新密码登录了。' });
     } catch (error) {
         console.error('重置密码 API 出错:', error.name);
@@ -559,72 +493,6 @@ app.get('/api/admin/tickets', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('获取工单列表 API 出错:', error);
         res.status(500).json({ message: '服务器错误，无法获取工单。' });
-    }
-});
-
-// --- 新增：一次性用户迁移路由 ---
-app.post('/api/admin/migrate-users', authenticateAdmin, async (req, res) => {
-    try {
-        // 1. 找出所有还没有 UUID 的老用户
-        const { rows: usersToMigrate } = await pool.query('SELECT id, email FROM users WHERE user_uuid IS NULL');
-
-        if (usersToMigrate.length === 0) {
-            return res.status(200).json({ message: '没有需要迁移的用户。' });
-        }
-
-        let successCount = 0;
-        let errorCount = 0;
-        const errors = [];
-
-        for (const user of usersToMigrate) {
-            try {
-                // 2. 为每个用户生成一个安全的随机密码 (用户永远不会用到)
-                const randomPassword = Math.random().toString(36).slice(-16);
-
-                // 3. 在 Supabase Auth 中创建用户
-                const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-                    email: user.email,
-                    password: randomPassword,
-                    email_confirm: true,
-                });
-
-                if (authError) {
-                    // 如果用户已在 Supabase Auth 中存在，则尝试获取其 UUID
-                    if (authError.message.includes("User already registered")) {
-                         const { data: { user: existingAuthUser } } = await supabase.auth.admin.getUserByEmail(user.email);
-                         if (existingAuthUser) {
-                            await pool.query('UPDATE users SET user_uuid = $1 WHERE id = $2', [existingAuthUser.id, user.id]);
-                            console.log(`用户 ${user.email} 已存在于 Auth，已更新其 UUID。`);
-                            successCount++;
-                         } else {
-                            throw new Error(`用户 ${user.email} 已在 Auth 中注册但无法获取信息。`);
-                         }
-                    } else {
-                        throw authError;
-                    }
-                } else {
-                    // 4. 将新生成的 UUID 写回你的 public.users 表
-                    const newUserId = authData.user.id;
-                    await pool.query('UPDATE users SET user_uuid = $1 WHERE id = $2', [newUserId, user.id]);
-                    successCount++;
-                }
-
-            } catch (err) {
-                errorCount++;
-                errors.push(`迁移用户 ${user.email} 失败: ${err.message}`);
-                console.error(`迁移用户 ${user.email} 失败:`, err);
-            }
-        }
-
-        res.status(200).json({
-            message: '用户迁移完成！',
-            successful: successCount,
-            failed: errorCount,
-            errors: errors,
-        });
-
-    } catch (error) {
-        res.status(500).json({ message: '迁移过程中发生严重错误。', error: error.message });
     }
 });
 
