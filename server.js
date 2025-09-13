@@ -271,6 +271,7 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 });
 
+// --- 关键修改：增强密码重置路由 ---
 app.post('/api/reset-password', async (req, res) => {
     const { token, newPassword } = req.body;
     if (!token || !newPassword || newPassword.length < 6) {
@@ -278,8 +279,31 @@ app.post('/api/reset-password', async (req, res) => {
     }
     try {
         const decoded = jwt.verify(token, process.env.PASSWORD_RESET_SECRET);
+        
+        // 1. 在你自己的 users 表中更新密码
         const hashedPassword = bcrypt.hashSync(newPassword, 10);
-        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
+        const { rows } = await pool.query('UPDATE users SET password = $1 WHERE id = $2 RETURNING user_uuid', [hashedPassword, decoded.id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: '未找到用户。' });
+        }
+        
+        const userUuid = rows[0].user_uuid;
+
+        // 2. 关键新增：在 Supabase Auth 中也更新该用户的密码
+        if (userUuid) {
+            const { error: updateError } = await supabase.auth.admin.updateUserById(
+                userUuid,
+                { password: newPassword }
+            );
+            if (updateError) {
+                console.error(`在 Supabase Auth 中更新用户 ${userUuid} 的密码失败:`, updateError);
+                // 即使这里失败，我们仍然让用户成功，因为主数据库已更新
+            }
+        } else {
+            console.warn(`用户 ID ${decoded.id} 缺少 user_uuid，无法在 Supabase Auth 中同步密码。`);
+        }
+
         res.status(200).json({ message: '密码已成功重置！您现在可以用新密码登录了。' });
     } catch (error) {
         console.error('重置密码 API 出错:', error.name);
@@ -535,6 +559,72 @@ app.get('/api/admin/tickets', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('获取工单列表 API 出错:', error);
         res.status(500).json({ message: '服务器错误，无法获取工单。' });
+    }
+});
+
+// --- 新增：一次性用户迁移路由 ---
+app.post('/api/admin/migrate-users', authenticateAdmin, async (req, res) => {
+    try {
+        // 1. 找出所有还没有 UUID 的老用户
+        const { rows: usersToMigrate } = await pool.query('SELECT id, email FROM users WHERE user_uuid IS NULL');
+
+        if (usersToMigrate.length === 0) {
+            return res.status(200).json({ message: '没有需要迁移的用户。' });
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+
+        for (const user of usersToMigrate) {
+            try {
+                // 2. 为每个用户生成一个安全的随机密码 (用户永远不会用到)
+                const randomPassword = Math.random().toString(36).slice(-16);
+
+                // 3. 在 Supabase Auth 中创建用户
+                const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+                    email: user.email,
+                    password: randomPassword,
+                    email_confirm: true,
+                });
+
+                if (authError) {
+                    // 如果用户已在 Supabase Auth 中存在，则尝试获取其 UUID
+                    if (authError.message.includes("User already registered")) {
+                         const { data: { user: existingAuthUser } } = await supabase.auth.admin.getUserByEmail(user.email);
+                         if (existingAuthUser) {
+                            await pool.query('UPDATE users SET user_uuid = $1 WHERE id = $2', [existingAuthUser.id, user.id]);
+                            console.log(`用户 ${user.email} 已存在于 Auth，已更新其 UUID。`);
+                            successCount++;
+                         } else {
+                            throw new Error(`用户 ${user.email} 已在 Auth 中注册但无法获取信息。`);
+                         }
+                    } else {
+                        throw authError;
+                    }
+                } else {
+                    // 4. 将新生成的 UUID 写回你的 public.users 表
+                    const newUserId = authData.user.id;
+                    await pool.query('UPDATE users SET user_uuid = $1 WHERE id = $2', [newUserId, user.id]);
+                    successCount++;
+                }
+
+            } catch (err) {
+                errorCount++;
+                errors.push(`迁移用户 ${user.email} 失败: ${err.message}`);
+                console.error(`迁移用户 ${user.email} 失败:`, err);
+            }
+        }
+
+        res.status(200).json({
+            message: '用户迁移完成！',
+            successful: successCount,
+            failed: errorCount,
+            errors: errors,
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: '迁移过程中发生严重错误。', error: error.message });
     }
 });
 
