@@ -302,6 +302,13 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
   section { padding: 4rem 0; }
   
   /* --- Navbar & Mobile Menu --- */
+  
+  /* --- 关键修复：让移动端导航栏背景不透明 --- */
+  .navbar {
+    background-color: var(--bg-color);
+    backdrop-filter: none;
+  }
+  
   .hamburger-menu { display: block; }
   .nav-items { 
     display: none; 
@@ -309,7 +316,7 @@ input:checked + .slider:before { background-color: var(--primary-color); transfo
     align-items: flex-start; 
     gap: 1rem; 
     width: 100%; 
-    background-color: var(--bg-color); /* 关键修复：确保背景不透明 */
+    background-color: var(--bg-color); /* 确保下拉菜单背景不透明 */
     position: absolute; 
     top: 100%; 
     left: 0; 
