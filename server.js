@@ -15,6 +15,7 @@ const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const axios = require('axios');
 const { Resend } = require('resend');
+const { createClient } = require('@supabase/supabase-js'); // 新增
 
 // ======================================================
 // --- 2. 应用初始化与环境变量检查 ---
@@ -27,7 +28,8 @@ const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
     'RESEND_API_KEY', 'MAIL_FROM_ADDRESS',
-    'CHAT_ENCRYPTION_KEY' // 检查聊天加密密钥
+    'CHAT_ENCRYPTION_KEY',
+    'SUPABASE_SERVICE_KEY' // 新增：确保服务端密钥存在
 ];
 
 for (const varName of requiredEnvVars) {
@@ -43,6 +45,9 @@ for (const varName of requiredEnvVars) {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = {};
+
+// 新增：初始化 Supabase 服务端 Admin Client
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 // ======================================================
 // --- 4. 中间件配置 ---
@@ -94,7 +99,7 @@ app.get('/api/config', (req, res) => {
     res.json({ 
         supabaseUrl: process.env.SUPABASE_URL, 
         supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
-        chatEncryptionKey: process.env.CHAT_ENCRYPTION_KEY // 将密钥发送给前端
+        chatEncryptionKey: process.env.CHAT_ENCRYPTION_KEY
     });
 });
 
@@ -124,8 +129,11 @@ app.post('/api/send-verification-code', async (req, res) => {
     }
 });
 
+// --- 关键修改：重写注册路由 ---
 app.post('/api/register', async (req, res) => {
     const { email, password, code, turnstileToken } = req.body;
+    
+    // 人机验证
     if (!turnstileToken) {
         return res.status(400).json({ message: '人机验证失败，请刷新重试。' });
     }
@@ -142,6 +150,8 @@ app.post('/api/register', async (req, res) => {
         console.error('Turnstile 验证出错:', error);
         return res.status(500).json({ message: '人机验证服务暂时不可用。' });
     }
+
+    // 字段和验证码校验
     if (!email || !password || !code || password.length < 6) {
         return res.status(400).json({ message: '邮箱、验证码和密码不能为空，且密码至少为6位！' });
     }
@@ -149,16 +159,34 @@ app.post('/api/register', async (req, res) => {
     if (!storedCode || Date.now() > storedCode.expires || storedCode.code !== code) {
         return res.status(400).json({ message: '验证码无效或已过期！' });
     }
-    try {
-        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) {
-            return res.status(409).json({ message: '该邮箱已被注册！' });
-        }
-        const hashedPassword = bcrypt.hashSync(password, 10);
-        await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, hashedPassword]);
-        delete verificationCodes[email];
 
-        // 注册成功后发送欢迎邮件
+    try {
+        // 1. 在 Supabase Auth 中创建用户
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+            email: email,
+            password: password,
+            email_confirm: true, // 自动确认邮箱
+        });
+
+        if (authError) {
+            if (authError.message && authError.message.includes("User already registered")) {
+                return res.status(409).json({ message: '该邮箱已被注册！' });
+            }
+            console.error('Supabase Auth 创建用户失败:', authError);
+            throw new Error('认证服务出错，注册失败。');
+        }
+
+        const authUserId = authData.user.id; // 获取 Supabase 返回的 UUID
+
+        // 2. 在你自己的 public.users 表中创建用户记录
+        const hashedPassword = bcrypt.hashSync(password, 10);
+        // 同时插入 email, password 和从 Supabase 获取的 user_uuid
+        const insertQuery = 'INSERT INTO users (email, password, user_uuid) VALUES ($1, $2, $3)';
+        await pool.query(insertQuery, [email, hashedPassword, authUserId]);
+        
+        delete verificationCodes[email]; // 清除验证码
+
+        // 3. 发送欢迎邮件
         try {
             await resend.emails.send({
                 from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
@@ -171,9 +199,23 @@ app.post('/api/register', async (req, res) => {
         }
         
         res.status(201).json({ message: '注册成功！' });
+
     } catch (error) {
         console.error('注册 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
+        // 错误回滚：如果 public.users 插入失败 (例如 email 重复)，需要删除刚在 Supabase Auth 创建的用户
+        if (error.code === '23505') { // PostgreSQL a unique_violation
+            try {
+                const { data: { user } } = await supabase.auth.admin.getUserByEmail(email);
+                if (user) {
+                    await supabase.auth.admin.deleteUser(user.id);
+                    console.log(`已回滚，删除 Supabase Auth 用户: ${email}`);
+                }
+            } catch(rollbackError) {
+                console.error('回滚删除 Supabase Auth 用户失败:', rollbackError);
+            }
+            return res.status(409).json({ message: '该邮箱已被注册！' });
+        }
+        res.status(500).json({ message: '服务器内部错误，注册失败。' });
     }
 });
 
