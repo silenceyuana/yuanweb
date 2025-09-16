@@ -1,4 +1,4 @@
-// chat.js - 全新聊天界面逻辑 (已添加端到端加密和所有修复)
+// chat.js - 全新聊天界面逻辑 (已添加端到端加密、所有修复及诊断日志)
 document.addEventListener('DOMContentLoaded', () => {
     // --- 0. 检查登录状态 ---
     const userToken = localStorage.getItem('userToken');
@@ -24,47 +24,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const conversationsListContainer = document.getElementById('conversations-list');
     const loadingIndicator = document.querySelector('.loading-indicator');
 
-    // --- 修复后的加密/解密函数 ---
-
-    // XOR 异或加密核心算法，保持不变
+    // --- 加密/解密函数 ---
     const xorCipher = (str, key) => {
         return str.split('').map((char, i) => {
             return String.fromCharCode(char.charCodeAt(0) ^ key.charCodeAt(i % key.length));
         }).join('');
     };
 
-    /**
-     * @description 修正后的加密函数
-     * @param {string} plainText - 需要加密的明文 (支持中文等任意字符)
-     * @param {string} key - 加密密钥
-     * @returns {string} - Base64 编码后的密文
-     */
     const encryptMessage = (plainText, key) => {
         if (!key) return plainText;
         const xorEncrypted = xorCipher(plainText, key);
-        // 关键改动：将可能包含多字节字符的字符串转换为 btoa 可以安全处理的格式
         const safeForBtoa = unescape(encodeURIComponent(xorEncrypted));
         return btoa(safeForBtoa);
     };
 
-    /**
-     * @description 修正后的解密函数
-     * @param {string} cipherText - 需要解密的 Base64 密文
-     * @param {string} key - 解密密钥
-     * @returns {string} - 解密后的明文
-     */
     const decryptMessage = (cipherText, key) => {
-        // 增加对非加密文本的判断，提高健壮性
         if (!key || cipherText === '...' || cipherText === '开始对话吧！' || !cipherText.trim()) {
             return cipherText;
         }
         try {
-            // 关键改动：先进行 Base64 解码，然后执行与加密时相反的操作来还原多字节字符
             const decodedFromBtoa = atob(cipherText);
             const decoded = decodeURIComponent(escape(decodedFromBtoa));
             return xorCipher(decoded, key);
         } catch (e) {
-            // 如果解密失败 (例如对于旧的、未正确加密的历史消息)，在控制台发出警告并返回原文
             console.warn('消息解密失败，返回原始密文:', cipherText, e);
             return cipherText;
         }
@@ -83,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingIndicator.style.display = 'none';
         }
         
-        // 调用修正后的解密函数
         const decryptedContent = decryptMessage(msg.content, chatEncryptionKey);
         
         const isSent = msg.sender_id === currentUser.id;
@@ -91,7 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
         bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
         const sender = isSent ? '你' : (msg.sender_username || msg.sender_email.split('@')[0]);
         
-        // 对解密后的内容进行HTML转义，防止XSS攻击
         const sanitizedContent = decryptedContent.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         
         bubble.innerHTML = `
@@ -130,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const displayName = convo.username || convo.email?.split('@')[0] || '未知用户';
-        // 对会话列表的最后一条消息也进行解密
         const lastMessageDecrypted = decryptMessage(convo.lastMessage || '...', chatEncryptionKey);
         
         item.innerHTML = `
@@ -232,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // --- 4. 初始化 ---
+    // --- 4. 初始化 (添加了诊断日志) ---
     async function main() {
         try {
             const [profileRes, convosRes, configRes] = await Promise.all([
@@ -247,13 +226,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const profileData = await profileRes.json();
             const jwtPayload = JSON.parse(atob(userToken.split('.')[1]));
+            
+            // --- 诊断日志 1: 检查JWT内容 ---
+            console.log('>>> 诊断日志: 解码后的JWT Payload:', jwtPayload);
+            if (!jwtPayload.id) {
+                console.error("!!! 严重错误: 你的 userToken (JWT) 中不包含 'id' 字段! RLS策略将无法工作。");
+            }
+            
             currentUser = { ...profileData, id: jwtPayload.id };
             
             const config = await configRes.json();
             chatEncryptionKey = config.chatEncryptionKey;
-            if (!chatEncryptionKey) {
-                console.error("未能获取加密密钥，聊天消息将不会被加密。");
-            }
             
             conversations['public'] = { type: 'public', id: 'public', username: '公开聊天室', lastMessage: '欢迎来到这里', created_at: new Date(0).toISOString() };
             const recentConvos = await convosRes.json();
@@ -268,8 +251,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 supabaseClient.channel('public:messages')
-                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, handleRealtimeMessage)
+                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                        // --- 诊断日志 2: 检查是否收到实时消息 ---
+                        console.log('>>> 诊断日志: 收到实时消息负载 (Payload):', payload);
+                        handleRealtimeMessage(payload);
+                    })
                     .subscribe((status, err) => {
+                        // --- 诊断日志 3: 检查实时连接状态 ---
+                        console.log('>>> 诊断日志: 实时订阅状态:', status);
                         if (status === 'SUBSCRIBED') {
                             console.log('成功连接到实时服务！');
                             resolve();
@@ -294,21 +283,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const content = messageInput.value.trim();
         if (!content) return;
         
-        // 乐观更新UI：立即显示未加密的消息
         const tempMessage = {
             sender_id: currentUser.id,
             sender_email: currentUser.email,
             sender_username: currentUser.username,
-            content: content, // 注意：这里显示的是明文
+            content: content,
             created_at: new Date().toISOString()
         };
-        // 在显示时，displayMessage内部会先尝试解密（虽然此时是明文，但函数能处理），保证逻辑统一
         displayMessage(tempMessage);
 
         const originalMessage = messageInput.value;
         messageInput.value = '';
 
-        // 加密后发送到服务器
         const encryptedContent = encryptMessage(content, chatEncryptionKey);
         
         const body = { content: encryptedContent };
@@ -326,13 +312,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) {
                 throw new Error("发送失败");
             }
-            // 成功发送后，服务器会通过Supabase的实时推送返回消息，由handleRealtimeMessage处理
-            // 这里不需要再做额外处理
         } catch (err) {
             alert('消息发送失败，请重试。');
-            // 恢复输入框内容
             messageInput.value = originalMessage;
-            // 可以在这里移除刚才乐观更新的消息气泡
         }
     });
     
