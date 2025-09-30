@@ -13,44 +13,54 @@
         .main-container {
             display: flex;
             justify-content: center;
-            align-items: flex-start; /* 改为 flex-start 以便内容多时从顶部开始 */
+            align-items: flex-start;
             min-height: 100vh;
-            padding: 2rem 1rem; /* 在手机端增加一些边距 */
+            padding: 2rem 1rem;
         }
         .content-wrapper {
             background: var(--section-odd-bg);
-            padding: 2rem 2.5rem; /* 增加内边距 */
+            padding: 2rem 2.5rem;
             border-radius: var(--border-radius-main);
             width: 100%;
-            max-width: 800px; /* 适当加宽以容纳更多内容 */
+            max-width: 800px;
             box-shadow: var(--modern-shadow);
         }
 
-        /* 外号卡片样式 */
-        .nickname-card {
+        /* 新增：创作者模块样式 */
+        .creator-module {
             border-bottom: 1px solid var(--border-color);
-            padding: 1.5rem 0;
-            margin-bottom: 1rem;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
         }
-        .nickname-card:last-child {
-            border-bottom: none; /* 最后一个卡片不需要下划线 */
+        .creator-module:last-child {
+            border-bottom: none;
             margin-bottom: 0;
-            padding-bottom: 0;
         }
-        .nickname-card h3 {
-            margin-top: 0;
-            margin-bottom: 0.5rem;
+        .creator-header {
+            font-size: 1.75rem;
             color: var(--primary-color);
-            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--primary-color);
+            display: inline-block; /* 让边框只包裹文字 */
         }
-        .nickname-card .creator {
-            font-style: italic;
+
+        /* 单个外号条目样式 */
+        .nickname-entry {
+            margin-bottom: 1.5rem;
+        }
+        .nickname-entry:last-child {
+            margin-bottom: 0;
+        }
+        .nickname-entry h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.4rem;
+            color: var(--text-color-primary);
+        }
+        .nickname-entry p {
+            margin: 0;
             color: var(--text-color-secondary);
-            margin-bottom: 1rem;
-            font-size: 0.9em;
-        }
-        .nickname-card p:last-child {
-            margin-bottom: 0; /* 移除意义段落的下边距 */
+            line-height: 1.6;
         }
 
         .loading, .empty-state {
@@ -59,20 +69,21 @@
             color: var(--text-color-secondary);
             padding: 2rem 0;
         }
-
         .error-message {
             text-align: center;
-            color: #dc3545; /* 红色以示错误 */
+            color: #dc3545;
             font-weight: bold;
         }
 
-        /* 响应式调整 */
         @media (max-width: 576px) {
             .content-wrapper {
                 padding: 1.5rem;
             }
-            .nickname-card h3 {
-                font-size: 1.3rem;
+            .creator-header {
+                font-size: 1.5rem;
+            }
+            .nickname-entry h3 {
+                font-size: 1.2rem;
             }
         }
     </style>
@@ -105,7 +116,6 @@
                 }
 
                 const nicknames = await response.json();
-
                 listContainer.innerHTML = ''; // 清空加载提示
 
                 if (nicknames.length === 0) {
@@ -113,16 +123,36 @@
                     return;
                 }
 
+                // 核心逻辑：将外号按 'creator' 分组
+                const groupedNicknames = {};
                 nicknames.forEach(item => {
-                    const card = document.createElement('div');
-                    card.className = 'nickname-card';
-                    card.innerHTML = `
-                        <h3>${escapeHTML(item.nickname)}</h3>
-                        <p class="creator">由 <strong>${escapeHTML(item.creator)}</strong> 提供</p>
-                        <p>${escapeHTML(item.meaning || '暂无说明')}</p>
-                    `;
-                    listContainer.appendChild(card);
+                    if (!groupedNicknames[item.creator]) {
+                        groupedNicknames[item.creator] = [];
+                    }
+                    groupedNicknames[item.creator].push(item);
                 });
+
+                // 遍历分组后的数据并生成 HTML
+                for (const creator in groupedNicknames) {
+                    const moduleEl = document.createElement('div');
+                    moduleEl.className = 'creator-module';
+
+                    let nicknamesHTML = '';
+                    groupedNicknames[creator].forEach(item => {
+                        nicknamesHTML += `
+                            <div class="nickname-entry">
+                                <h3>${escapeHTML(item.nickname)}</h3>
+                                <p>${escapeHTML(item.meaning || '暂无说明')}</p>
+                            </div>
+                        `;
+                    });
+
+                    moduleEl.innerHTML = `
+                        <h2 class="creator-header">由 ${escapeHTML(creator)} 提供</h2>
+                        ${nicknamesHTML}
+                    `;
+                    listContainer.appendChild(moduleEl);
+                }
 
             } catch (error) {
                 console.error('获取外号失败:', error);
