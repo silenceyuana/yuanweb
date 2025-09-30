@@ -26,8 +26,7 @@ const PORT = process.env.PORT || 3000;
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
-    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS',
-    'CHAT_ENCRYPTION_KEY' // 检查聊天加密密钥
+    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS'
 ];
 
 for (const varName of requiredEnvVars) {
@@ -93,8 +92,7 @@ const authenticateAdmin = (req, res, next) => {
 app.get('/api/config', (req, res) => {
     res.json({ 
         supabaseUrl: process.env.SUPABASE_URL, 
-        supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
-        chatEncryptionKey: process.env.CHAT_ENCRYPTION_KEY // 将密钥发送给前端
+        supabaseAnonKey: process.env.SUPABASE_ANON_KEY
     });
 });
 
@@ -307,7 +305,6 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
 });
 
 // --- 趣味外号 (Nicknames) API ---
-
 // 公开接口：获取所有外号
 app.get('/api/nicknames', async (req, res) => {
     try {
@@ -347,124 +344,6 @@ app.delete('/api/admin/nicknames/:id', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('删除外号 API 出错:', error);
         res.status(500).json({ message: '服务器错误，无法删除外号。' });
-    }
-});
-
-
-// --- 聊天 (Chat) API ---
-app.get('/api/users/search', authenticateUser, async (req, res) => {
-    const { q } = req.query;
-    if (!q || q.trim().length < 2) {
-        return res.json([]);
-    }
-    try {
-        const result = await pool.query(
-            'SELECT id, username, email FROM users WHERE username ILIKE $1 AND id != $2 LIMIT 10',
-            [`%${q.trim()}%`, req.user.id]
-        );
-        res.json(result.rows);
-    } catch (error) {
-        console.error('搜索用户 API 出错:', error);
-        res.status(500).json({ message: '搜索失败' });
-    }
-});
-
-app.get('/api/chat/conversations', authenticateUser, async (req, res) => {
-    const myId = req.user.id;
-    try {
-        const query = `
-            SELECT DISTINCT ON (peer_id)
-                peer_id,
-                peer_username,
-                peer_email,
-                content,
-                created_at
-            FROM (
-                SELECT
-                    CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END as peer_id,
-                    CASE WHEN sender_id = $1 THEN receiver_username ELSE sender_username END as peer_username,
-                    CASE WHEN sender_id = $1 THEN receiver_email ELSE sender_email END as peer_email,
-                    content,
-                    created_at
-                FROM messages
-                WHERE (sender_id = $1 OR receiver_id = $1) AND receiver_id IS NOT NULL
-            ) AS conversations
-            ORDER BY peer_id, created_at DESC;
-        `;
-        const result = await pool.query(query, [myId]);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('获取对话列表 API 出错:', error);
-        res.status(500).json({ message: '无法获取对话列表' });
-    }
-});
-
-app.get('/api/chat/public', authenticateUser, async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT * FROM messages WHERE receiver_id IS NULL ORDER BY created_at DESC LIMIT 100'
-        );
-        res.json(result.rows.reverse());
-    } catch (error) {
-        console.error('获取公开消息 API 出错:', error);
-        res.status(500).json({ message: '无法获取消息。' });
-    }
-});
-
-app.get('/api/chat/private/:peerId', authenticateUser, async (req, res) => {
-    const { peerId } = req.params;
-    const myId = req.user.id;
-    try {
-        const result = await pool.query(
-            `SELECT * FROM messages 
-             WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)
-             ORDER BY created_at DESC LIMIT 100`,
-            [myId, peerId]
-        );
-        res.json(result.rows.reverse());
-    } catch (error) {
-        console.error('获取私聊消息 API 出错:', error);
-        res.status(500).json({ message: '无法获取消息。' });
-    }
-});
-
-app.post('/api/chat/messages', authenticateUser, async (req, res) => {
-    const { content, receiverId } = req.body;
-    if (!content || content.trim() === '') {
-        return res.status(400).json({ message: '消息内容不能为空！' });
-    }
-    const { id: senderId, email: senderEmail } = req.user;
-
-    try {
-        const senderResult = await pool.query('SELECT username FROM users WHERE id = $1', [senderId]);
-        const senderUsername = senderResult.rows[0]?.username;
-
-        let result;
-
-        if (receiverId) {
-            const receiverResult = await pool.query('SELECT username, email FROM users WHERE id = $1', [receiverId]);
-            if (receiverResult.rows.length === 0) {
-                return res.status(404).json({ message: '接收用户不存在。' });
-            }
-            const { username: receiverUsername, email: receiverEmail } = receiverResult.rows[0];
-            
-            result = await pool.query(
-                `INSERT INTO messages (sender_id, sender_email, sender_username, receiver_id, receiver_email, receiver_username, content) 
-                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-                [senderId, senderEmail, senderUsername, receiverId, receiverEmail, receiverUsername, content.trim()]
-            );
-        } else {
-            result = await pool.query(
-                `INSERT INTO messages (sender_id, sender_email, sender_username, content) 
-                 VALUES ($1, $2, $3, $4) RETURNING *`,
-                [senderId, senderEmail, senderUsername, content.trim()]
-            );
-        }
-        
-        res.status(201).json(result.rows[0]);
-    } catch (error) {
-        console.error('发送聊天消息 API 出错:', error);
-        res.status(500).json({ message: '无法发送消息。' });
     }
 });
 
