@@ -8,19 +8,40 @@
     <link href="assets/css/theme.css" rel="stylesheet" />
     <link rel="icon" href="assets/img/favicon.ico" />
     <style>
+        /* 继承 ticket.html 和 login.html 的风格 */
         body { background-color: var(--bg-color); color: var(--text-color-primary); }
-        .container { max-width: 900px; margin: 2rem auto; padding: 2rem; }
-        .nickname-card {
+        .main-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* 改为 flex-start 以便内容多时从顶部开始 */
+            min-height: 100vh;
+            padding: 2rem 1rem; /* 在手机端增加一些边距 */
+        }
+        .content-wrapper {
             background: var(--section-odd-bg);
-            border: 1px solid var(--border-color);
+            padding: 2rem 2.5rem; /* 增加内边距 */
             border-radius: var(--border-radius-main);
-            padding: 1.5rem 2rem;
-            margin-bottom: 1.5rem;
+            width: 100%;
+            max-width: 800px; /* 适当加宽以容纳更多内容 */
             box-shadow: var(--modern-shadow);
+        }
+
+        /* 外号卡片样式 */
+        .nickname-card {
+            border-bottom: 1px solid var(--border-color);
+            padding: 1.5rem 0;
+            margin-bottom: 1rem;
+        }
+        .nickname-card:last-child {
+            border-bottom: none; /* 最后一个卡片不需要下划线 */
+            margin-bottom: 0;
+            padding-bottom: 0;
         }
         .nickname-card h3 {
             margin-top: 0;
+            margin-bottom: 0.5rem;
             color: var(--primary-color);
+            font-size: 1.5rem;
         }
         .nickname-card .creator {
             font-style: italic;
@@ -28,17 +49,47 @@
             margin-bottom: 1rem;
             font-size: 0.9em;
         }
-        .loading { text-align: center; font-size: 1.2em; }
+        .nickname-card p:last-child {
+            margin-bottom: 0; /* 移除意义段落的下边距 */
+        }
+
+        .loading, .empty-state {
+            text-align: center;
+            font-size: 1.1em;
+            color: var(--text-color-secondary);
+            padding: 2rem 0;
+        }
+
+        .error-message {
+            text-align: center;
+            color: #dc3545; /* 红色以示错误 */
+            font-weight: bold;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 576px) {
+            .content-wrapper {
+                padding: 1.5rem;
+            }
+            .nickname-card h3 {
+                font-size: 1.3rem;
+            }
+        }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <h1 class="text-center">趣味外号墙</h1>
-        <p class="text-center" style="margin-bottom: 3rem;"><a href="index.html">返回主页</a></p>
+    <div class="main-container">
+        <div class="content-wrapper">
+            <h1 class="text-center" style="font-size: 2rem; margin-bottom: 1.5rem;">趣味外号墙</h1>
+            
+            <div id="nicknames-list">
+                <p class="loading">正在加载外号...</p>
+            </div>
 
-        <div id="nicknames-list">
-            <p class="loading">正在加载外号...</p>
+            <p class="text-center" style="margin-top: 2.5rem; margin-bottom: 0;">
+                <a href="index.html">返回主页</a>
+            </p>
         </div>
     </div>
 
@@ -48,14 +99,17 @@
 
             try {
                 const response = await fetch('/api/nicknames');
-                if (!response.ok) throw new Error('网络请求失败');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || '网络请求失败');
+                }
 
                 const nicknames = await response.json();
 
                 listContainer.innerHTML = ''; // 清空加载提示
 
                 if (nicknames.length === 0) {
-                    listContainer.innerHTML = '<p class="text-center">还没有人给我起外号呢！</p>';
+                    listContainer.innerHTML = '<p class="empty-state">还没有人给我起外号呢！</p>';
                     return;
                 }
 
@@ -63,18 +117,26 @@
                     const card = document.createElement('div');
                     card.className = 'nickname-card';
                     card.innerHTML = `
-                        <h3>${item.nickname}</h3>
-                        <p class="creator">由 <strong>${item.creator}</strong> 提供</p>
-                        <p>${item.meaning}</p>
+                        <h3>${escapeHTML(item.nickname)}</h3>
+                        <p class="creator">由 <strong>${escapeHTML(item.creator)}</strong> 提供</p>
+                        <p>${escapeHTML(item.meaning || '暂无说明')}</p>
                     `;
                     listContainer.appendChild(card);
                 });
 
             } catch (error) {
                 console.error('获取外号失败:', error);
-                listContainer.innerHTML = '<p class="text-center" style="color: red;">加载失败，请稍后重试。</p>';
+                listContainer.innerHTML = `<p class="error-message">加载失败：${error.message}</p>`;
             }
         });
+
+        // 辅助函数：防止 XSS 攻击
+        function escapeHTML(str) {
+            if (!str) return '';
+            const p = document.createElement('p');
+            p.textContent = str;
+            return p.innerHTML;
+        }
     </script>
 
 </body>
