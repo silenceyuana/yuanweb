@@ -306,6 +306,51 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
     }
 });
 
+// --- 趣味外号 (Nicknames) API ---
+
+// 公开接口：获取所有外号
+app.get('/api/nicknames', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM nicknames ORDER BY "created_at" DESC');
+        res.json(result.rows);
+    } catch (error) {
+        console.error('获取外号列表 API 出错:', error);
+        res.status(500).json({ message: '服务器错误，无法获取外号列表。' });
+    }
+});
+
+// 管理员接口：添加一个新外号
+app.post('/api/admin/nicknames', authenticateAdmin, async (req, res) => {
+    const { creator, nickname, meaning } = req.body;
+    if (!creator || !nickname) {
+        return res.status(400).json({ message: '起外号的人和外号名称不能为空！' });
+    }
+    try {
+        const sql = `INSERT INTO nicknames (creator, nickname, meaning) VALUES ($1, $2, $3) RETURNING *`;
+        const result = await pool.query(sql, [creator, nickname, meaning]);
+        res.status(201).json({ message: '外号添加成功！', nickname: result.rows[0] });
+    } catch (error) {
+        console.error('添加外号 API 出错:', error);
+        res.status(500).json({ message: '服务器错误，无法添加外号。' });
+    }
+});
+
+// 管理员接口：删除一个外号
+app.delete('/api/admin/nicknames/:id', authenticateAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('DELETE FROM nicknames WHERE id = $1', [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: '未找到该外号！' });
+        }
+        res.json({ message: '外号已成功删除！' });
+    } catch (error) {
+        console.error('删除外号 API 出错:', error);
+        res.status(500).json({ message: '服务器错误，无法删除外号。' });
+    }
+});
+
+
 // --- 聊天 (Chat) API ---
 app.get('/api/users/search', authenticateUser, async (req, res) => {
     const { q } = req.query;

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>趣味外号 - Yuan的个人主页</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="assets/js/theme-sync.js"></script>
+    <link href="assets/css/theme.css" rel="stylesheet" />
+    <link rel="icon" href="assets/img/favicon.ico" />
+    <style>
+        body { background-color: var(--bg-color); color: var(--text-color-primary); }
+        .container { max-width: 900px; margin: 2rem auto; padding: 2rem; }
+        .nickname-card {
+            background: var(--section-odd-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-main);
+            padding: 1.5rem 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--modern-shadow);
+        }
+        .nickname-card h3 {
+            margin-top: 0;
+            color: var(--primary-color);
+        }
+        .nickname-card .creator {
+            font-style: italic;
+            color: var(--text-color-secondary);
+            margin-bottom: 1rem;
+            font-size: 0.9em;
+        }
+        .loading { text-align: center; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 class="text-center">趣味外号墙</h1>
+        <p class="text-center" style="margin-bottom: 3rem;"><a href="index.html">返回主页</a></p>
+
+        <div id="nicknames-list">
+            <p class="loading">正在加载外号...</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const listContainer = document.getElementById('nicknames-list');
+
+            try {
+                const response = await fetch('/api/nicknames');
+                if (!response.ok) throw new Error('网络请求失败');
+
+                const nicknames = await response.json();
+
+                listContainer.innerHTML = ''; // 清空加载提示
+
+                if (nicknames.length === 0) {
+                    listContainer.innerHTML = '<p class="text-center">还没有人给我起外号呢！</p>';
+                    return;
+                }
+
+                nicknames.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'nickname-card';
+                    card.innerHTML = `
+                        <h3>${item.nickname}</h3>
+                        <p class="creator">由 <strong>${item.creator}</strong> 提供</p>
+                        <p>${item.meaning}</p>
+                    `;
+                    listContainer.appendChild(card);
+                });
+
+            } catch (error) {
+                console.error('获取外号失败:', error);
+                listContainer.innerHTML = '<p class="text-center" style="color: red;">加载失败，请稍后重试。</p>';
+            }
+        });
+    </script>
+
+</body>
+</html>
