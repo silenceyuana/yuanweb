@@ -305,8 +305,8 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
 });
 
 // --- 趣味外号 (Nicknames) API ---
-// 公开接口：获取所有外号
-app.get('/api/nicknames', async (req, res) => {
+// !! 关键改动 !! 添加 authenticateUser 中间件，保护此路由
+app.get('/api/nicknames', authenticateUser, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM nicknames ORDER BY "created_at" DESC');
         res.json(result.rows);

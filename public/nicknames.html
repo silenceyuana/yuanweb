@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>外号界面 - Yuan的个人主页</title>
+    <title>趣味外号 - Yuan的个人主页</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="assets/js/theme-sync.js"></script>
     <link href="assets/css/theme.css" rel="stylesheet" />
@@ -42,7 +42,7 @@
             margin-bottom: 1.5rem;
             padding-bottom: 0.5rem;
             border-bottom: 2px solid var(--primary-color);
-            display: inline-block; /* 让边框只包裹文字 */
+            display: inline-block;
         }
 
         /* 单个外号条目样式 */
@@ -89,10 +89,19 @@
     </style>
 </head>
 <body>
+    
+    <!-- !! 关键改动 1: 页面访问守卫 !! -->
+    <script>
+        const userToken = localStorage.getItem('userToken');
+        if (!userToken) {
+            alert('请先登录后才能查看外号墙！');
+            window.location.href = 'login.html';
+        }
+    </script>
 
     <div class="main-container">
         <div class="content-wrapper">
-            <h1 class="text-center" style="font-size: 2rem; margin-bottom: 1.5rem;">给我取外号的人才</h1>
+            <h1 class="text-center" style="font-size: 2rem; margin-bottom: 1.5rem;">趣味外号墙</h1>
             
             <div id="nicknames-list">
                 <p class="loading">正在加载外号...</p>
@@ -107,10 +116,24 @@
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const listContainer = document.getElementById('nicknames-list');
+            // 从 localStorage 获取 token，我们知道它一定存在，因为上面的守卫脚本已检查过
+            const token = localStorage.getItem('userToken');
 
             try {
-                const response = await fetch('/api/nicknames');
+                // !! 关键改动 2: 在 fetch 请求头中加入 Authorization !!
+                const response = await fetch('/api/nicknames', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
                 if (!response.ok) {
+                    // 如果 token 无效或过期，后端会返回 401 或 403
+                    if (response.status === 401 || response.status === 403) {
+                        alert('您的登录已过期，请重新登录。');
+                        window.location.href = 'login.html';
+                        return;
+                    }
                     const errorData = await response.json();
                     throw new Error(errorData.message || '网络请求失败');
                 }
