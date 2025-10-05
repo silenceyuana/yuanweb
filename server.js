@@ -26,7 +26,7 @@ const PORT = process.env.PORT || 3000;
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
-    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS'
+    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS', 'UNSPLASH_ACCESS_KEY'
 ];
 
 for (const varName of requiredEnvVars) {
@@ -277,6 +277,88 @@ app.post('/api/profile', authenticateUser, async (req, res) => {
     }
 });
 
+// --- 每日运势 (Fortune) API ---
+app.get('/api/fortune', authenticateUser, async (req, res) => {
+    const userId = req.user.id;
+    const today = new Date().toISOString().slice(0, 10);
+
+    try {
+        // 检查今天是否已经获取过运势
+        const existingFortune = await pool.query(
+            'SELECT * FROM fortunes WHERE "userId" = $1 AND fortune_date = $2',
+            [userId, today]
+        );
+
+        if (existingFortune.rows.length > 0) {
+            // 如果有，直接返回旧数据
+            return res.json(existingFortune.rows[0]);
+        }
+
+        // --- 生成新运势 ---
+        const luck_number = Math.floor(Math.random() * 100) + 1;
+        const wealth_luck = Math.floor(Math.random() * 10) + 1; // 财运 1-10
+        const career_luck = Math.floor(Math.random() * 10) + 1; // 官运 1-10
+
+        // 根据运气值决定等级
+        let luck_level_text;
+        if (luck_number >= 90) {
+            luck_level_text = '大吉';
+        } else if (luck_number >= 60) {
+            luck_level_text = '中吉';
+        } else {
+            luck_level_text = '小吉';
+        }
+        
+        const hitokotoResponse = await axios.get('https://v1.hitokoto.cn/?c=i&encode=json');
+        const quote = hitokotoResponse.data.hitokoto;
+        const quote_source = hitokotoResponse.data.from;
+        
+        const image_prompt = hitokotoResponse.data.type === 'a' ? 'anime' : 'nature'; // 简单分类作为图片搜索词
+
+        // 调用 Unsplash API 获取图片
+        const unsplashResponse = await axios.get('https://api.unsplash.com/photos/random', {
+            headers: { 'Authorization': `Client-ID ${process.env.UNSPLASH_ACCESS_KEY}` },
+            params: {
+                query: image_prompt,
+                orientation: 'landscape'
+            }
+        });
+
+        const image_url = unsplashResponse.data.urls.regular;
+        const photographer_name = unsplashResponse.data.user.name;
+        const photographer_url = unsplashResponse.data.user.links.html;
+        
+        // 将摄影师信息也存入 quote_source 以便前端显示
+        const full_quote_source = `${quote_source} | Photo by <a href="${photographer_url}" target="_blank">${photographer_name}</a> on <a href="https://unsplash.com" target="_blank">Unsplash</a>`;
+
+        // 将所有新数据存入数据库
+        const newFortune = await pool.query(
+            `INSERT INTO fortunes ("userId", luck_number, luck_level_text, wealth_luck, career_luck, quote, quote_source, image_url, image_prompt, fortune_date) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+            [userId, luck_number, luck_level_text, wealth_luck, career_luck, quote, full_quote_source, image_url, image_prompt, today]
+        );
+        
+        res.status(201).json(newFortune.rows[0]);
+
+    } catch (error) {
+        console.error('获取每日运势 API 出错:', error.response ? error.response.data : error.message);
+        // 如果API失败，提供一个备用方案，保证用户体验
+        const fallback_luck = Math.floor(Math.random() * 100) + 1;
+        res.status(500).json({ 
+            message: '获取运势失败，请稍后重试。',
+            luck_number: fallback_luck,
+            luck_level_text: fallback_luck >= 60 ? '吉' : '平',
+            wealth_luck: Math.floor(Math.random() * 5) + 3,
+            career_luck: Math.floor(Math.random() * 5) + 3,
+            quote: '生活就是这样，一半是回忆，一半是继续。',
+            quote_source: '网络',
+            image_url: `https://picsum.photos/500/300?random=${Math.random()}`,
+            image_prompt: 'fallback'
+        });
+    }
+});
+
+
 // --- 工单 (Tickets) API ---
 app.post('/api/tickets', authenticateUser, async (req, res) => {
     const { subject, message } = req.body;
@@ -305,7 +387,6 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
 });
 
 // --- 趣味外号 (Nicknames) API ---
-// !! 关键改动 !! 添加 authenticateUser 中间件，保护此路由
 app.get('/api/nicknames', authenticateUser, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM nicknames ORDER BY "created_at" DESC');
