@@ -23,7 +23,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 检查所有必需的环境变量
-// 注意：我们从这里移除了 'UNSPLASH_ACCESS_KEY'
+// 注意：这个版本不需要 'UNSPLASH_ACCESS_KEY'
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
@@ -278,42 +278,50 @@ app.post('/api/profile', authenticateUser, async (req, res) => {
     }
 });
 
-// --- 每日运势 (Fortune) API --- 【无外部API密钥版本】
+// --- 每日运势 (Fortune) API --- 【备选方案增强版 - 带错误处理】
 app.get('/api/fortune', authenticateUser, async (req, res) => {
     const userId = req.user.id;
     const today = new Date().toISOString().slice(0, 10);
 
     try {
+        // 1. 检查今天是否已经获取过运势
         const existingFortune = await pool.query(
             'SELECT * FROM fortunes WHERE "userId" = $1 AND fortune_date = $2',
             [userId, today]
         );
 
         if (existingFortune.rows.length > 0) {
+            // 如果有，直接返回旧数据
             return res.json(existingFortune.rows[0]);
         }
 
+        // --- 如果没有，生成新的运势 ---
+        let quote = '生活就是这样，一半是回忆，一半是继续。'; // 备用引言
+        let quote_source = '网络'; // 备用来源
+
+        try {
+            // 2. 尝试获取一言
+            const hitokotoResponse = await axios.get('https://v1.hitokoto.cn/?c=i&encode=json', { timeout: 3000 }); // 设置3秒超时
+            quote = hitokotoResponse.data.hitokoto;
+            quote_source = hitokotoResponse.data.from;
+        } catch (hitokotoError) {
+            console.error('获取一言API失败，将使用备用数据:', hitokotoError.message);
+        }
+
+        // 3. 生成其他数据
         const luck_number = Math.floor(Math.random() * 100) + 1;
         const wealth_luck = Math.floor(Math.random() * 10) + 1;
         const career_luck = Math.floor(Math.random() * 10) + 1;
-
+        
         let luck_level_text;
-        if (luck_number >= 90) {
-            luck_level_text = '大吉';
-        } else if (luck_number >= 60) {
-            luck_level_text = '中吉';
-        } else {
-            luck_level_text = '小吉';
-        }
+        if (luck_number >= 90) luck_level_text = '大吉';
+        else if (luck_number >= 60) luck_level_text = '中吉';
+        else luck_level_text = '小吉';
         
-        const hitokotoResponse = await axios.get('https://v1.hitokoto.cn/?c=i&encode=json');
-        const quote = hitokotoResponse.data.hitokoto;
-        const quote_source = hitokotoResponse.data.from;
-        
-        // 使用无需密钥的 picsum.photos 作为图片源
         const image_url = `https://picsum.photos/500/300?random=${Math.random()}`;
-        const image_prompt = "随机风景"; // 提示词可以设为固定值
+        const image_prompt = "随机风景";
 
+        // 4. 将所有数据（即使是备用的）存入数据库
         const newFortune = await pool.query(
             `INSERT INTO fortunes ("userId", luck_number, luck_level_text, wealth_luck, career_luck, quote, quote_source, image_url, image_prompt, fortune_date) 
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
@@ -322,9 +330,10 @@ app.get('/api/fortune', authenticateUser, async (req, res) => {
         
         res.status(201).json(newFortune.rows[0]);
 
-    } catch (error) {
-        console.error('获取每日运势 API 出错:', error);
-        res.status(500).json({ message: '获取运势失败，请稍后重试。'});
+    } catch (dbError) {
+        // 这个 catch 现在主要捕获数据库错误
+        console.error('每日运势 API 数据库操作出错:', dbError);
+        res.status(500).json({ message: '数据库繁忙，请稍后重试。' });
     }
 });
 
