@@ -12,89 +12,59 @@
         .fortune-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
         .fortune-card {
             background: var(--section-odd-bg);
-            padding: 2.5rem;
+            padding: 2rem;
             border-radius: var(--border-radius-main);
             width: 100%;
-            max-width: 500px;
+            max-width: 420px; /* 调整宽度使其更紧凑 */
             box-shadow: var(--modern-shadow);
             text-align: center;
         }
         
+        .fortune-title {
+            font-size: 1rem;
+            color: var(--text-color-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .luck-level {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--text-color-primary);
+            margin-bottom: 0.75rem;
+        }
+
+        .star-rating {
+            font-size: 1.5rem;
+            color: #f59e0b; /* 星星颜色 */
+            margin-bottom: 1.5rem;
+        }
+        .star-rating .empty {
+            color: var(--border-color);
+        }
+
+        .quote {
+            font-size: 1rem;
+            color: var(--text-color-secondary);
+            margin-bottom: 1.5rem;
+            min-height: 2em;
+        }
+
         .fortune-image {
             width: 100%;
             height: auto;
             border-radius: var(--border-radius-small);
-            margin-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
             background-color: var(--border-color);
             min-height: 200px;
             object-fit: cover;
         }
 
-        .image-prompt {
+        .disclaimer {
             font-size: 0.8rem;
-            color: var(--text-color-secondary);
-            margin-bottom: 2rem;
+            color: #9ca3af; /* 使用一个更柔和的灰色 */
+            line-height: 1.4;
         }
 
-        .luck-display {
-            margin: 1.5rem 0;
-        }
-        .luck-display p {
-            font-size: 1rem;
-            color: var(--text-color-secondary);
-            margin-bottom: 0.5rem;
-        }
-        .luck-number {
-            font-size: clamp(4rem, 15vw, 6rem);
-            font-weight: 700;
-            line-height: 1;
-        }
-        /* 新增：运势等级样式 */
-        .luck-level {
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin-bottom: 1rem;
-        }
-
-        /* 新增：隐藏数值样式 */
-        .hidden-stats {
-            display: flex;
-            justify-content: space-around;
-            margin-top: 1.5rem;
-            padding: 1rem 0;
-            border-top: 1px solid var(--border-color);
-            border-bottom: 1px solid var(--border-color);
-        }
-        .stat {
-            font-size: 1rem;
-            color: var(--text-color-primary);
-        }
-        .stat span {
-            font-weight: bold;
-            font-size: 1.2rem;
-            color: var(--primary-color);
-        }
-
-        .quote {
-            font-size: 1.1rem;
-            font-style: italic;
-            color: var(--text-color-primary);
-            min-height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding-top: 1.5rem;
-            margin-top: 1.5rem;
-        }
-        .quote-source {
-            font-size: 0.9rem;
-            color: var(--text-color-secondary);
-            margin-top: 1rem;
-        }
-        .quote-source a {
-            color: var(--primary-color);
-            text-decoration: underline;
-        }
     </style>
 </head>
 <body>
@@ -108,72 +78,70 @@
 
     <div class="fortune-container">
         <div class="fortune-card">
-            <h1 class="h2">今日运势</h1>
+            <p class="fortune-title">您的今日运势为:</p>
+            <h1 id="luck-level-text" class="luck-level text-gradient">正在揭晓...</h1>
+            <div id="star-rating" class="star-rating"></div>
+            
+            <p class="quote" id="hitokoto-text">正在获取今日一言...</p>
             
             <img id="fortune-image" class="fortune-image" alt="随机风景图" src="">
-            <p id="image-prompt" class="image-prompt"></p>
-
-            <!-- 运势等级 -->
-            <h2 id="luck-level-text" class="luck-level text-gradient">...</h2>
-
-            <div class="luck-display">
-                <p>你的今日好运指数</p>
-                <div id="luck-number" class="luck-number">--</div>
-            </div>
-
-            <!-- 隐藏数值 -->
-            <div class="hidden-stats">
-                <div class="stat">财运: <span id="wealth-luck">?</span></div>
-                <div class="stat">官运: <span id="career-luck">?</span></div>
-            </div>
-
-            <p class="quote" id="hitokoto-text">正在获取今日一言...</p>
-            <p id="quote-source" class="quote-source"></p>
             
-            <p class="text-center" style="margin-top: 2.5rem; margin-bottom: 0;"><a href="index.html">返回主页</a></p>
+            <p class="disclaimer">
+                图片源自网络|如有侵权|请反馈删除<br>
+                仅供娱乐|相信科学|请勿迷信
+            </p>
+            
+            <p class="text-center" style="margin-top: 1.5rem; margin-bottom: 0;"><a href="index.html">返回主页</a></p>
         </div>
     </div>
     
     <script>
         const luckLevelElement = document.getElementById('luck-level-text');
-        const luckElement = document.getElementById('luck-number');
+        const starRatingElement = document.getElementById('star-rating');
         const hitokotoElement = document.getElementById('hitokoto-text');
         const imageElement = document.getElementById('fortune-image');
-        const quoteSourceElement = document.getElementById('quote-source');
-        const imagePromptElement = document.getElementById('image-prompt');
-        const wealthLuckElement = document.getElementById('wealth-luck');
-        const careerLuckElement = document.getElementById('career-luck');
+
+        // 根据运气值生成星星的函数
+        function generateStars(luckNumber) {
+            // 将 1-100 的运气值映射到 1-6 颗星
+            const filledStars = Math.max(1, Math.ceil(luckNumber / 16.67));
+            const emptyStars = 6 - filledStars;
+            
+            let starsHTML = '';
+            for (let i = 0; i < filledStars; i++) {
+                starsHTML += '★';
+            }
+            for (let i = 0; i < emptyStars; i++) {
+                starsHTML += '<span class="empty">☆</span>';
+            }
+            return starsHTML;
+        }
 
         async function fetchAndDisplayFortune() {
             try {
                 const response = await fetch('/api/fortune', {
-                    headers: {
-                        'Authorization': `Bearer ${userToken}`
-                    }
+                    headers: { 'Authorization': `Bearer ${userToken}` }
                 });
 
-                if (response.status === 401 || response.status === 403) {
-                    alert('您的登录已过期，请重新登录。');
-                    localStorage.removeItem('userToken');
-                    window.location.href = 'login.html';
-                    return;
-                }
-                 if (!response.ok) {
+                if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.message || '获取运势失败，服务器可能出错了。');
                 }
 
                 const data = await response.json();
 
-                // 更新页面内容
-                luckLevelElement.textContent = data.luck_level_text;
-                luckElement.textContent = data.luck_number;
+                // 组合运势标题
+                let levelText = data.luck_level_text;
+                if (data.wealth_luck >= 7) levelText += '+财运';
+                if (data.career_luck >= 7) levelText += '+官运';
+                luckLevelElement.textContent = levelText;
+
+                // 生成并显示星星
+                starRatingElement.innerHTML = generateStars(data.luck_number);
+                
+                // 显示一言和图片
+                hitokotoElement.textContent = data.quote;
                 imageElement.src = data.image_url;
-                imagePromptElement.textContent = `图片主题: ${data.image_prompt}`;
-                hitokotoElement.textContent = `“${data.quote}”`;
-                quoteSourceElement.innerHTML = `—— ${data.quote_source}`;
-                wealthLuckElement.textContent = data.wealth_luck;
-                careerLuckElement.textContent = data.career_luck;
 
             } catch (error) {
                 console.error('获取运势失败:', error);
