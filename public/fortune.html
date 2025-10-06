@@ -46,7 +46,7 @@
             font-size: 1rem;
             color: var(--text-color-secondary);
             margin-bottom: 1.5rem;
-            min-height: 2em;
+            min-height: 2em; /* 避免加载时跳动 */
         }
 
         .fortune-image {
@@ -54,9 +54,9 @@
             height: auto;
             border-radius: var(--border-radius-small);
             margin-bottom: 1.5rem;
-            background-color: var(--border-color);
-            min-height: 200px;
-            object-fit: cover;
+            background-color: var(--border-color); /* 图片加载时的占位背景色 */
+            min-height: 200px; /* 防止加载时布局跳动 */
+            object-fit: cover; /* 确保图片不变形 */
         }
 
         .disclaimer {
@@ -64,10 +64,10 @@
             color: #9ca3af; /* 使用一个更柔和的灰色 */
             line-height: 1.4;
         }
-
     </style>
 </head>
 <body>
+    <!-- 登录守卫：在页面内容渲染前执行，确保未登录用户直接跳转 -->
     <script>
         const userToken = localStorage.getItem('userToken');
         if (!userToken) {
@@ -120,15 +120,28 @@
         async function fetchAndDisplayFortune() {
             try {
                 const response = await fetch('/api/fortune', {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
+                    headers: {
+                        'Authorization': `Bearer ${userToken}` // userToken 在顶部守卫脚本中已定义
+                    }
                 });
 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || '获取运势失败，服务器可能出错了。');
+                // 智能处理登录过期：如果状态码是 401 或 403
+                if (response.status === 401 || response.status === 403) {
+                    alert('您的登录已过期，请重新登录。');
+                    localStorage.removeItem('userToken'); // 清除无效的token
+                    window.location.href = 'login.html';
+                    return; // 终止后续操作
                 }
 
+                // 尝试将响应解析为JSON
                 const data = await response.json();
+
+                // 如果响应状态码不是成功的 (例如 500)，但返回了JSON错误信息
+                if (!response.ok) {
+                    throw new Error(data.message || '获取运势失败，服务器可能出错了。');
+                }
+
+                // --- 成功获取数据，更新页面内容 ---
 
                 // 组合运势标题
                 let levelText = data.luck_level_text;
@@ -144,17 +157,22 @@
                 imageElement.src = data.image_url;
 
             } catch (error) {
+                // 这个 catch 现在主要处理网络错误或JSON解析错误
                 console.error('获取运势失败:', error);
                 luckLevelElement.textContent = '获取失败';
-                hitokotoElement.textContent = error.message;
+                // 根据错误类型显示更友好的信息
+                if (error.message.includes('JSON')) {
+                    hitokotoElement.textContent = '与服务器通信时发生格式错误，可能是登录过期，请尝试重新登录。';
+                } else {
+                    hitokotoElement.textContent = error.message;
+                }
             }
         }
 
+        // 页面加载时并且确认用户已登录后，自动执行
         if (userToken) {
             document.addEventListener('DOMContentLoaded', fetchAndDisplayFortune);
         }
     </script>
-
-
 </body>
 </html>
