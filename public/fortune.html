@@ -15,7 +15,7 @@
             padding: 2rem;
             border-radius: var(--border-radius-main);
             width: 100%;
-            max-width: 420px; /* 调整宽度使其更紧凑 */
+            max-width: 420px; 
             box-shadow: var(--modern-shadow);
             text-align: center;
         }
@@ -35,7 +35,7 @@
 
         .star-rating {
             font-size: 1.5rem;
-            color: #f59e0b; /* 星星颜色 */
+            color: #f59e0b; 
             margin-bottom: 1.5rem;
         }
         .star-rating .empty {
@@ -46,7 +46,7 @@
             font-size: 1rem;
             color: var(--text-color-secondary);
             margin-bottom: 1.5rem;
-            min-height: 2em; /* 避免加载时跳动 */
+            min-height: 2em; 
         }
 
         .fortune-image {
@@ -54,20 +54,20 @@
             height: auto;
             border-radius: var(--border-radius-small);
             margin-bottom: 1.5rem;
-            background-color: var(--border-color); /* 图片加载时的占位背景色 */
-            min-height: 200px; /* 防止加载时布局跳动 */
-            object-fit: cover; /* 确保图片不变形 */
+            background-color: var(--border-color); 
+            min-height: 200px; 
+            object-fit: cover; 
         }
 
         .disclaimer {
             font-size: 0.8rem;
-            color: #9ca3af; /* 使用一个更柔和的灰色 */
+            color: #9ca3af; 
             line-height: 1.4;
         }
     </style>
 </head>
 <body>
-    <!-- 登录守卫：在页面内容渲染前执行，确保未登录用户直接跳转 -->
+
     <script>
         const userToken = localStorage.getItem('userToken');
         if (!userToken) {
@@ -101,9 +101,9 @@
         const hitokotoElement = document.getElementById('hitokoto-text');
         const imageElement = document.getElementById('fortune-image');
 
-        // 根据运气值生成星星的函数
+
         function generateStars(luckNumber) {
-            // 将 1-100 的运气值映射到 1-6 颗星
+
             const filledStars = Math.max(1, Math.ceil(luckNumber / 16.67));
             const emptyStars = 6 - filledStars;
             
@@ -121,43 +121,40 @@
             try {
                 const response = await fetch('/api/fortune', {
                     headers: {
-                        'Authorization': `Bearer ${userToken}` // userToken 在顶部守卫脚本中已定义
+                        'Authorization': `Bearer ${userToken}` 
                     }
                 });
 
-                // 智能处理登录过期：如果状态码是 401 或 403
+
                 if (response.status === 401 || response.status === 403) {
                     alert('您的登录已过期，请重新登录。');
-                    localStorage.removeItem('userToken'); // 清除无效的token
+                    localStorage.removeItem('userToken'); 
                     window.location.href = 'login.html';
-                    return; // 终止后续操作
+                    return; 
                 }
 
-                // 尝试将响应解析为JSON
                 const data = await response.json();
 
-                // 如果响应状态码不是成功的 (例如 500)，但返回了JSON错误信息
+
                 if (!response.ok) {
                     throw new Error(data.message || '获取运势失败，服务器可能出错了。');
                 }
 
-                // --- 成功获取数据，更新页面内容 ---
 
-                // 组合运势标题
                 let levelText = data.luck_level_text;
                 if (data.wealth_luck >= 7) levelText += '+财运';
                 if (data.career_luck >= 7) levelText += '+官运';
                 luckLevelElement.textContent = levelText;
 
-                // 生成并显示星星
+
                 starRatingElement.innerHTML = generateStars(data.luck_number);
                 
-                // 显示一言和图片
+
                 hitokotoElement.textContent = data.quote;
                 imageElement.src = data.image_url;
 
             } catch (error) {
-                // 这个 catch 现在主要处理网络错误或JSON解析错误
+
                 console.error('获取运势失败:', error);
                 luckLevelElement.textContent = '获取失败';
                 // 根据错误类型显示更友好的信息
