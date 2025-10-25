@@ -15,6 +15,7 @@ const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 const axios = require('axios');
 const { Resend } = require('resend');
+const fs = require('fs').promises;
 
 // ======================================================
 // --- 2. 应用初始化与环境变量检查 ---
@@ -23,11 +24,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 检查所有必需的环境变量
-// 注意：这个版本不需要 'UNSPLASH_ACCESS_KEY'
 const requiredEnvVars = [
     'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
-    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS'
+    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS', 'CRON_SECRET'
 ];
 
 for (const varName of requiredEnvVars) {
@@ -88,6 +88,41 @@ const authenticateAdmin = (req, res, next) => {
 // ======================================================
 // --- 6. API 路由定义 ---
 // ======================================================
+
+// --- 数据库保活 API ---
+app.get('/api/keep-alive', async (req, res) => {
+    const cronSecret = req.headers['authorization']?.split(' ')[1];
+    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+        return res.status(401).send('Unauthorized');
+    }
+
+    try {
+        await pool.query('SELECT 1;');
+        console.log('Database keep-alive ping successful.');
+        res.status(200).send('Database keep-alive ping successful.');
+    } catch (error) {
+        console.error('Database keep-alive ping failed:', error);
+        res.status(500).send('Database keep-alive ping failed.');
+    }
+});
+
+// --- 多语言翻译 API ---
+app.get('/api/locales/:lng', async (req, res) => {
+    const { lng } = req.params;
+    const allowedLangs = ['en', 'zh-CN'];
+    if (!allowedLangs.includes(lng)) {
+        return res.status(404).json({ message: 'Language not found.' });
+    }
+    const filePath = path.join(__dirname, 'public', 'locales', lng, 'translation.json');
+    try {
+        const data = await fs.readFile(filePath, 'utf8');
+        res.setHeader('Content-Type', 'application/json');
+        res.send(data);
+    } catch (error) {
+        console.error(`无法读取翻译文件: ${filePath}`, error);
+        res.status(500).json({ message: 'Could not load language file.' });
+    }
+});
 
 // --- 配置接口 ---
 app.get('/api/config', (req, res) => {
@@ -496,3 +531,4 @@ if (process.env.NODE_ENV !== 'production') {
 
 // 导出 Express app 实例，供 Vercel 部署使用
 module.exports = app;
+
