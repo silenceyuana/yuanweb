@@ -32,45 +32,59 @@
 
 ## 🚀 本地开发与运行 (Getting Started)
 
-由于这是一个纯静态网站，你不需要复杂的配置。
-
-1.  **克隆仓库到本地**:
+1.  **安装依赖**:
     ```bash
-    git clone https://github.com/silenceyuana/yuanweb.git
+    npm install
     ```
 
-2.  **进入项目目录**:
+2.  **配置环境变量**:
     ```bash
-    cd <你的仓库名>
+    cp .env.example .env
     ```
+    编辑 `.env` 文件，填入你的实际配置值。
 
-3.  **在浏览器中打开**:
-    直接在你的文件管理器中找到 `index.html` 文件，然后用浏览器（如 Chrome, Firefox）打开它即可预览。
-
-    *   **推荐**: 为了获得更好的开发体验（例如热重载），你可以使用 VS Code 并安装 [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) 插件。安装后，只需在 `index.html` 文件上右键，选择 `Open with Live Server` 即可。
+3.  **启动开发服务器**:
+    ```bash
+    npm start
+    ```
+    服务器将在 http://localhost:3000 启动。
 
 ---
 
 ## 部署到 Vercel (Deployment)
 
-将这个网站托管到 Vercel 上非常简单，并且完全免费。
+这个应用使用 Node.js 后端，需要在 Vercel 上配置环境变量。
 
 1.  **准备工作**:
     *   确保你已经将你的项目代码推送到了 GitHub 仓库。
-    *   注册并登录 [Vercel](https://vercel.com/) 账号（推荐使用 GitHub 账号直接登录）。
+    *   注册并登录 [Vercel](https://vercel.com/) 账号。
 
 2.  **导入项目**:
-    *   在 Vercel 的仪表盘 (Dashboard) 页面，点击 `Add New...` -> `Project`。
-    *   从列表中选择并导入你刚刚推送到 GitHub 的仓库。
+    *   在 Vercel 的仪表盘页面，点击 `Add New...` -> `Project`。
+    *   从列表中选择并导入你的 GitHub 仓库。
 
-3.  **配置与部署**:
-    *   Vercel 会自动识别这是一个静态网站，你**无需任何特殊配置**。
-    *   直接点击 `Deploy` 按钮。
+3.  **配置环境变量**:
+    *   在项目设置中，添加以下环境变量（参考 `.env.example`）：
+        - `DATABASE_URL`
+        - `SUPABASE_URL`
+        - `SUPABASE_ANON_KEY`
+        - `JWT_SECRET`
+        - `PASSWORD_RESET_SECRET`
+        - `BASE_URL`
+        - `TURNSTILE_SECRET_KEY`
+        - `RESEND_API_KEY`
+        - `MAIL_FROM_ADDRESS`
+        - `CRON_SECRET`
 
-4.  **完成**!
-    *   等待大约 30 秒，Vercel 就会为你构建并部署好网站，并提供一个 `.vercel.app` 的域名供你访问。
+4.  **部署**:
+    *   Vercel 会自动检测 `vercel.json` 配置。
+    *   点击 `Deploy` 按钮开始部署。
 
-> **自动部署**: 之后，每当你向 GitHub 仓库的 `main` (或 `master`) 分支推送新的提交时，Vercel 都会自动为你重新部署网站，无需手动操作！
+5.  **完成**!
+    *   部署完成后，你将获得一个 `.vercel.app` 域名。
+    *   每次推送到主分支时会自动重新部署。
+
+> **注意**: 确保所有必需的环境变量都已正确设置，否则应用无法正常运行。
 
 ---
 
