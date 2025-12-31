@@ -67,6 +67,14 @@ const pool = mysql.createPool({
     }
 });
 
+// 测试数据库连接
+pool.getConnection().then(conn => {
+    console.log('Database connected successfully');
+    conn.release();
+}).catch(err => {
+    console.error('Database connection failed:', err);
+});
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = {}; // 内存存储验证码（Vercel 实例重启会重置，生产环境建议用 Redis）
 
@@ -219,6 +227,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
         );
         res.json({ token, user: { email: user.email, role: user.role, username: user.username } });
     } catch (error) {
+        console.error('Login error:', error);
         res.status(500).json({ message: '登录异常' });
     }
 });
