@@ -10,6 +10,39 @@
     <link rel="icon" href="assets/img/favicon.ico" />
 </head>
 <body>
+
+    <nav class="navbar fixed-top">
+      <div class="container navbar-content">
+        <a class="navbar-brand h1" href="index.html">YUAN</a>
+        
+        <button class="hamburger-menu" id="hamburger-menu" aria-label="Toggle navigation">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <div class="nav-items" id="nav-items">
+          <ul>
+            <li><a class="nav-link" href="#about">关于我</a></li>
+            <li><a class="nav-link" href="#projects">我的作品</a></li>
+            <li><a class="nav-link" href="fortune.html">每日运势</a></li>
+            <li><a class="nav-link" href="#contact">联系我</a></li>
+          </ul>
+
+          <a href="login.html" class="btn btn-sm btn-outline-primary" id="login-button">登录</a>
+
+          <div class="user-dropdown" id="user-dropdown" style="display: none;">
+            <button class="user-dropdown-toggle" id="user-dropdown-toggle" aria-label="用户菜单">
+              <i class="fas fa-user-circle"></i>
+              <span id="user-email"></span>
+            </button>
+            <div class="dropdown-menu" id="dropdown-menu">
+              <a href="profile.html" class="dropdown-item">个人资料</a>
+              <a href="#" class="dropdown-item" id="logout-button">退出登录</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
     <div class="profile-container">
         <div class="profile-form">
             <h2 class="text-center">编辑个人资料</h2>
@@ -98,5 +131,6 @@
         }
     </script>
 
+    <script src="assets/js/global.js" defer></script> 
 </body>
 </html>
