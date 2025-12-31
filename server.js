@@ -1,9 +1,8 @@
 // ======================================================
 // --- 1. 模块引入与配置 ---
 // ======================================================
-
 if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
+    require('dotenv').config();
 }
 
 const express = require('express');
@@ -12,61 +11,78 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const { Pool } = require('pg');
+const mysql = require('mysql2/promise');
 const axios = require('axios');
 const { Resend } = require('resend');
 const fs = require('fs').promises;
 
-// ======================================================
-// --- 2. 应用初始化与环境变量检查 ---
-// ======================================================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 检查所有必需的环境变量
+// ======================================================
+// --- 2. 环境变量检查 ---
+// ======================================================
 const requiredEnvVars = [
-    'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
-    'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
-    'RESEND_API_KEY', 'MAIL_FROM_ADDRESS', 'CRON_SECRET'
+    'DATABASE_URL', 
+    'JWT_SECRET', 
+    'PASSWORD_RESET_SECRET', 
+    'BASE_URL', 
+    'TURNSTILE_SECRET_KEY', 
+    'RESEND_API_KEY', 
+    'MAIL_FROM_ADDRESS', 
+    'CRON_SECRET'
 ];
 
-for (const varName of requiredEnvVars) {
+requiredEnvVars.forEach(varName => {
     if (!process.env[varName]) {
-        console.error(`严重错误: 缺少必要的环境变量 "${varName}"！`);
-        throw new Error(`Missing required environment variable: ${varName}`);
+        console.warn(`警告: 缺少环境变量 "${varName}"，部分功能可能受限。`);
     }
-}
+});
 
 // ======================================================
-// --- 3. 第三方服务与数据库连接 ---
+// --- 3. 数据库与第三方服务初始化 ---
 // ======================================================
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// 创建 MySQL 连接池
+const pool = mysql.createPool({
+    uri: process.env.DATABASE_URL,
+    waitForConnections: true,
+    connectionLimit: 5, // Vercel Serverless 环境下建议保持较小的连接数
+    queueLimit: 0,
+    ssl: {
+        rejectUnauthorized: false // 适配大多数云端 MySQL (如 TiDB, Aiven, 阿里云)
+    }
+});
+
 const resend = new Resend(process.env.RESEND_API_KEY);
-const verificationCodes = {};
+const verificationCodes = {}; // 内存存储验证码（Vercel 实例重启会重置，生产环境建议用 Redis）
 
 // ======================================================
 // --- 4. 中间件配置 ---
 // ======================================================
-app.set('trust proxy', 1);
+app.set('trust proxy', 1); // 必须：在 Vercel 后面正确获取用户 IP
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// 限流器
 const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, max: 5,
-    message: { message: '登录尝试次数过多，请 15 分钟后再试！' },
-    standardHeaders: true, legacyHeaders: false,
+    windowMs: 15 * 60 * 1000, 
+    max: 10,
+    message: { message: '尝试次数过多，请 15 分钟后再试。' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
 // ======================================================
-// --- 5. 认证中间件 ---
+// --- 5. 权限验证中间件 ---
 // ======================================================
 const authenticateUser = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (token == null) return res.sendStatus(401);
+    if (!token) return res.status(401).json({ message: '未授权，请登录' });
+
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
+        if (err) return res.status(403).json({ message: 'Token 已失效' });
         req.user = user;
         next();
     });
@@ -75,10 +91,11 @@ const authenticateUser = (req, res, next) => {
 const authenticateAdmin = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (token == null) return res.sendStatus(401);
+    if (!token) return res.status(401).json({ message: '未授权' });
+
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err || user.role !== 'admin') {
-            return res.status(403).json({ message: '需要管理员权限！' });
+            return res.status(403).json({ message: '权限不足，需要管理员权限' });
         }
         req.user = user;
         next();
@@ -86,60 +103,46 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ======================================================
-// --- 6. API 路由定义 ---
+// --- 6. 核心业务 API 路由 ---
 // ======================================================
 
-// --- 数据库保活 API ---
+// --- 数据库保活接口 ---
 app.get('/api/keep-alive', async (req, res) => {
     const cronSecret = req.headers['authorization']?.split(' ')[1];
     if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
         return res.status(401).send('Unauthorized');
     }
-
     try {
-        await pool.query('SELECT 1;');
-        console.log('Database keep-alive ping successful.');
-        res.status(200).send('Database keep-alive ping successful.');
+        await pool.query('SELECT 1');
+        res.status(200).send('MySQL Ping Success');
     } catch (error) {
-        console.error('Database keep-alive ping failed:', error);
-        res.status(500).send('Database keep-alive ping failed.');
+        res.status(500).send('Database connection failed');
     }
 });
 
-// --- 多语言翻译 API ---
+// --- 多语言支持 ---
 app.get('/api/locales/:lng', async (req, res) => {
     const { lng } = req.params;
     const allowedLangs = ['en', 'zh-CN'];
-    if (!allowedLangs.includes(lng)) {
-        return res.status(404).json({ message: 'Language not found.' });
-    }
-    const filePath = path.join(__dirname, 'public', 'locales', lng, 'translation.json');
+    if (!allowedLangs.includes(lng)) return res.status(404).send('Not found');
+    
     try {
+        const filePath = path.join(__dirname, 'public', 'locales', lng, 'translation.json');
         const data = await fs.readFile(filePath, 'utf8');
-        res.setHeader('Content-Type', 'application/json');
-        res.send(data);
+        res.json(JSON.parse(data));
     } catch (error) {
-        console.error(`无法读取翻译文件: ${filePath}`, error);
-        res.status(500).json({ message: 'Could not load language file.' });
+        res.status(500).json({ message: 'Error loading locale' });
     }
 });
 
-// --- 配置接口 ---
-app.get('/api/config', (req, res) => {
-    res.json({ 
-        supabaseUrl: process.env.SUPABASE_URL, 
-        supabaseAnonKey: process.env.SUPABASE_ANON_KEY
-    });
-});
-
-// --- 注册流程 API ---
+// --- 注册流程 ---
 app.post('/api/send-verification-code', async (req, res) => {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ message: '邮箱不能为空！' });
+    if (!email) return res.status(400).json({ message: '邮箱不能为空' });
 
     try {
-        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) return res.status(409).json({ message: '该邮箱已被注册！' });
+        const [rows] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+        if (rows.length > 0) return res.status(409).json({ message: '该邮箱已被注册' });
         
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         verificationCodes[email] = { code, expires: Date.now() + 5 * 60 * 1000 };
@@ -148,387 +151,214 @@ app.post('/api/send-verification-code', async (req, res) => {
             from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
             to: [email],
             subject: '您的注册验证码',
-            html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>您的验证码</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">欢迎注册！</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">您的验证码是：</p><div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin: 30px 0; text-align: center;"><p style="font-size: 36px; font-weight: bold; color: #0d6efd; letter-spacing: 5px; margin: 0;">${code}</p></div><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">该验证码将在5分钟内失效，请勿泄露给他人。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
+            html: `<div style="padding:20px; border:1px solid #eee;"><h1>您的验证码是：${code}</h1><p>有效期为5分钟。</p></div>`,
         });
-        
-        res.status(200).json({ message: '验证码已成功发送到您的邮箱！' });
+        res.status(200).json({ message: '验证码已发送' });
     } catch (error) {
-        console.error('发送验证码 API 出错:', error);
-        res.status(500).json({ message: '邮件服务器繁忙，请稍后重试。' });
+        res.status(500).json({ message: '邮件发送失败' });
     }
 });
 
 app.post('/api/register', async (req, res) => {
     const { email, password, code, turnstileToken } = req.body;
-    if (!turnstileToken) {
-        return res.status(400).json({ message: '人机验证失败，请刷新重试。' });
-    }
+    
+    // Cloudflare Turnstile 验证
     try {
-        const response = await axios.post(
-            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-            { secret: process.env.TURNSTILE_SECRET_KEY, response: turnstileToken },
-            { headers: { 'Content-Type': 'application/json' } }
-        );
-        if (!response.data.success) {
-            return res.status(403).json({ message: '人机验证未能通过！' });
-        }
-    } catch (error) {
-        console.error('Turnstile 验证出错:', error);
-        return res.status(500).json({ message: '人机验证服务暂时不可用。' });
-    }
-    if (!email || !password || !code || password.length < 6) {
-        return res.status(400).json({ message: '邮箱、验证码和密码不能为空，且密码至少为6位！' });
-    }
-    const storedCode = verificationCodes[email];
-    if (!storedCode || Date.now() > storedCode.expires || storedCode.code !== code) {
-        return res.status(400).json({ message: '验证码无效或已过期！' });
-    }
-    try {
-        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) {
-            return res.status(409).json({ message: '该邮箱已被注册！' });
-        }
-        const hashedPassword = bcrypt.hashSync(password, 10);
-        await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, hashedPassword]);
-        delete verificationCodes[email];
+        const verifyRes = await axios.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+            secret: process.env.TURNSTILE_SECRET_KEY,
+            response: turnstileToken
+        });
+        if (!verifyRes.data.success) return res.status(403).json({ message: '人机验证失败' });
+    } catch (e) { return res.status(500).json({ message: '验证服务异常' }); }
 
-        // 注册成功后发送欢迎邮件
-        try {
-            await resend.emails.send({
-                from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
-                to: [email],
-                subject: '欢迎来到YUAN的网站！',
-                html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>欢迎注册！</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">注册成功！</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">感谢您注册YUAN的网站。我们很高兴您的加入！</p><div style="text-align: center; margin: 30px 0;"><a href="${process.env.BASE_URL}/login.html" style="background-color: #0d6efd; color: white; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">立即登录</a></div><p style="font-size: 14px; color: #606770; text-align: center; line-height: 1.6;">如果您有任何疑问，请随时通过提交工单与我们联系。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
-            });
-        } catch (emailError) {
-            console.error('发送注册欢迎邮件失败:', emailError);
-        }
-        
-        res.status(201).json({ message: '注册成功！' });
+    const stored = verificationCodes[email];
+    if (!stored || Date.now() > stored.expires || stored.code !== code) {
+        return res.status(400).json({ message: '验证码无效或已过期' });
+    }
+
+    try {
+        const hashedPassword = bcrypt.hashSync(password, 10);
+        await pool.query('INSERT INTO users (email, password) VALUES (?, ?)', [email, hashedPassword]);
+        delete verificationCodes[email];
+        res.status(201).json({ message: '注册成功' });
     } catch (error) {
-        console.error('注册 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: '邮箱已存在' });
+        res.status(500).json({ message: '注册失败' });
     }
 });
 
-// --- 用户账户、密码重置、个人资料 API ---
+// --- 登录 ---
 app.post('/api/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ message: '邮箱和密码不能为空！' });
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        const user = result.rows[0];
+        const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+        const user = rows[0];
         if (!user || !bcrypt.compareSync(password, user.password)) {
-            return res.status(401).json({ message: '邮箱或密码错误！' });
+            return res.status(401).json({ message: '账号或密码错误' });
         }
-        if (user.isBanned) {
-            return res.status(403).json({ message: '您的账户已被封禁，请联系管理员。' });
-        }
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.status(200).json({ 
-            message: '登录成功！', 
-            token, 
-            user: { email: user.email, role: user.role, username: user.username } 
-        });
+        if (user.isBanned) return res.status(403).json({ message: '账号已被封禁' });
+
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: '24h' }
+        );
+        res.json({ token, user: { email: user.email, role: user.role, username: user.username } });
     } catch (error) {
-        console.error('登录 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
+        res.status(500).json({ message: '登录异常' });
     }
 });
 
+// --- 找回密码 ---
 app.post('/api/forgot-password', async (req, res) => {
     const { email } = req.body;
-    const genericMessage = { message: '如果该邮箱已注册，您将会收到一封密码重置邮件。' };
-    if (!email) return res.status(400).json({ message: '请输入您的邮箱地址。' });
-
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        const user = result.rows[0];
-
-        if (user) {
-            const passwordResetToken = jwt.sign({ id: user.id, email: user.email }, process.env.PASSWORD_RESET_SECRET, { expiresIn: '15m' });
-            const resetLink = `${process.env.BASE_URL}/reset-password.html?token=${passwordResetToken}`;
-            
+        const [rows] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+        if (rows.length > 0) {
+            const token = jwt.sign({ id: rows[0].id }, process.env.PASSWORD_RESET_SECRET, { expiresIn: '15m' });
+            const link = `${process.env.BASE_URL}/reset-password.html?token=${token}`;
             await resend.emails.send({
-                from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
+                from: process.env.MAIL_FROM_ADDRESS,
                 to: [email],
-                subject: '重置您的账户密码',
-                html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>重置您的密码</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><div style="text-align: center; margin-bottom: 30px;"><img src="https://www.betteryuan.cn/assets/img/favicon.ico" alt="网站Logo" style="max-width: 80px;"></div><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">密码重置请求</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">我们收到了一个重置您账户密码的请求。请点击下方的按钮来设置您的新密码：</p><div style="text-align: center; margin: 30px 0;"><a href="${resetLink}" style="background-color: #0d6efd; color: white; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">重置密码</a></div><p style="font-size: 14px; color: #606770; text-align: center; line-height: 1.6;">此链接将在 <strong>15 分钟</strong> 内失效。如果您没有请求重置密码，请忽略此邮件。</p><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
+                subject: '重置密码',
+                html: `<p>请点击链接重置密码（15分钟有效）：<a href="${link}">${link}</a></p>`
             });
         }
-        res.status(200).json(genericMessage);
-    } catch (error) {
-        console.error('忘记密码 API 出错:', error);
-        res.status(200).json(genericMessage);
-    }
+        res.json({ message: '如果邮箱存在，重置邮件已发送。' });
+    } catch (e) { res.status(500).json({ message: '服务异常' }); }
 });
 
 app.post('/api/reset-password', async (req, res) => {
     const { token, newPassword } = req.body;
-    if (!token || !newPassword || newPassword.length < 6) {
-        return res.status(400).json({ message: '缺少必要信息，或新密码格式不正确（至少6位）。' });
-    }
     try {
         const decoded = jwt.verify(token, process.env.PASSWORD_RESET_SECRET);
-        const hashedPassword = bcrypt.hashSync(newPassword, 10);
-        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
-        res.status(200).json({ message: '密码已成功重置！您现在可以用新密码登录了。' });
-    } catch (error) {
-        console.error('重置密码 API 出错:', error.name);
-        if (error.name === 'TokenExpiredError') {
-            return res.status(400).json({ message: '密码重置链接已过期，请重新申请。' });
-        }
-        res.status(400).json({ message: '密码重置链接无效，请重新申请。' });
-    }
+        const hash = bcrypt.hashSync(newPassword, 10);
+        await pool.query('UPDATE users SET password = ? WHERE id = ?', [hash, decoded.id]);
+        res.json({ message: '密码重置成功' });
+    } catch (e) { res.status(400).json({ message: '链接无效或已过期' }); }
 });
 
+// --- 用户资料 ---
 app.get('/api/profile', authenticateUser, async (req, res) => {
     try {
-        const result = await pool.query('SELECT email, username FROM users WHERE id = $1', [req.user.id]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: '用户不存在。' });
-        }
-        res.json(result.rows[0]);
-    } catch (error) {
-        console.error('获取个人资料 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
-    }
+        const [rows] = await pool.query('SELECT email, username, level, createdAt FROM users WHERE id = ?', [req.user.id]);
+        res.json(rows[0]);
+    } catch (e) { res.status(500).json({ message: '获取失败' }); }
 });
 
 app.post('/api/profile', authenticateUser, async (req, res) => {
     const { username } = req.body;
-    if (!username || username.trim().length < 2 || username.trim().length > 20) {
-        return res.status(400).json({ message: '昵称长度必须在 2 到 20 个字符之间。' });
-    }
-
     try {
-        const result = await pool.query('UPDATE users SET username = $1 WHERE id = $2 RETURNING username', [username.trim(), req.user.id]);
-        res.json({ message: '昵称更新成功！', username: result.rows[0].username });
-    } catch (error) {
-        if (error.code === '23505') {
-            return res.status(409).json({ message: '该昵称已被使用，请换一个。' });
-        }
-        console.error('更新个人资料 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误，无法更新昵称。' });
+        await pool.query('UPDATE users SET username = ? WHERE id = ?', [username, req.user.id]);
+        res.json({ message: '昵称更新成功', username });
+    } catch (e) { 
+        if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: '昵称已被占用' });
+        res.status(500).json({ message: '更新失败' }); 
     }
 });
 
-// --- 每日运势 (Fortune) API --- 【备选方案增强版 - 带错误处理】
+// --- 每日运势 (适配 MySQL 获取插入后的数据) ---
 app.get('/api/fortune', authenticateUser, async (req, res) => {
     const userId = req.user.id;
     const today = new Date().toISOString().slice(0, 10);
 
     try {
-        // 1. 检查今天是否已经获取过运势
-        const existingFortune = await pool.query(
-            'SELECT * FROM fortunes WHERE "userId" = $1 AND fortune_date = $2',
-            [userId, today]
-        );
+        const [rows] = await pool.query('SELECT * FROM fortunes WHERE userId = ? AND fortune_date = ?', [userId, today]);
+        if (rows.length > 0) return res.json(rows[0]);
 
-        if (existingFortune.rows.length > 0) {
-            // 如果有，直接返回旧数据
-            return res.json(existingFortune.rows[0]);
-        }
-
-        // --- 如果没有，生成新的运势 ---
-        let quote = '生活就是这样，一半是回忆，一半是继续。'; // 备用引言
-        let quote_source = '网络'; // 备用来源
-
+        // 获取 Hitokoto 接口
+        let quote = "顺其自然。";
+        let from = "网络";
         try {
-            // 2. 尝试获取一言
-            const hitokotoResponse = await axios.get('https://v1.hitokoto.cn/?c=i&encode=json', { timeout: 3000 }); // 设置3秒超时
-            quote = hitokotoResponse.data.hitokoto;
-            quote_source = hitokotoResponse.data.from;
-        } catch (hitokotoError) {
-            console.error('获取一言API失败，将使用备用数据:', hitokotoError.message);
-        }
+            const h = await axios.get('https://v1.hitokoto.cn/?c=i', { timeout: 2000 });
+            quote = h.data.hitokoto;
+            from = h.data.from;
+        } catch (e) {}
 
-        // 3. 生成其他数据
-        const luck_number = Math.floor(Math.random() * 100) + 1;
-        const wealth_luck = Math.floor(Math.random() * 10) + 1;
-        const career_luck = Math.floor(Math.random() * 10) + 1;
-        
-        let luck_level_text;
-        if (luck_number >= 90) luck_level_text = '大吉';
-        else if (luck_number >= 60) luck_level_text = '中吉';
-        else luck_level_text = '小吉';
-        
-        const image_url = `https://picsum.photos/500/300?random=${Math.random()}`;
-        const image_prompt = "随机风景";
-
-        // 4. 将所有数据（即使是备用的）存入数据库
-        const newFortune = await pool.query(
-            `INSERT INTO fortunes ("userId", luck_number, luck_level_text, wealth_luck, career_luck, quote, quote_source, image_url, image_prompt, fortune_date) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [userId, luck_number, luck_level_text, wealth_luck, career_luck, quote, quote_source, image_url, image_prompt, today]
+        const luck = Math.floor(Math.random() * 100) + 1;
+        const [result] = await pool.query(
+            `INSERT INTO fortunes (userId, luck_number, luck_level_text, wealth_luck, career_luck, quote, quote_source, image_url, fortune_date) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId, luck, luck > 80 ? '大吉' : '正常', 8, 8, quote, from, `https://picsum.photos/500/300?random=${luck}`, today]
         );
-        
-        res.status(201).json(newFortune.rows[0]);
 
-    } catch (dbError) {
-        // 这个 catch 现在主要捕获数据库错误
-        console.error('每日运势 API 数据库操作出错:', dbError);
-        res.status(500).json({ message: '数据库繁忙，请稍后重试。' });
-    }
+        const [newRows] = await pool.query('SELECT * FROM fortunes WHERE id = ?', [result.insertId]);
+        res.json(newRows[0]);
+    } catch (e) { res.status(500).json({ message: '运势生成失败' }); }
 });
 
-// --- 工单 (Tickets) API ---
+// --- 工单系统 ---
 app.post('/api/tickets', authenticateUser, async (req, res) => {
     const { subject, message } = req.body;
-    if (!subject || !message) {
-        return res.status(400).json({ message: '工单主题和内容不能为空！' });
-    }
-    const { id: userId, email: userEmail } = req.user;
-    const sql = `INSERT INTO tickets ("userId", "userEmail", subject, message) VALUES ($1, $2, $3, $4)`;
     try {
-        await pool.query(sql, [userId, userEmail, subject, message]);
-
-        resend.emails.send({
-            from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
-            to: [userEmail],
-            subject: `您的工单已收到: "${subject}"`,
-            html: `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>工单已收到</title></head><body style="margin: 0; padding: 0; background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 20px;"><tr><td align="center"><table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"><tr><td style="padding: 40px;"><h1 style="font-size: 24px; font-weight: bold; color: #1c1e21; text-align: center; margin-bottom: 15px;">我们已收到您的工单</h1><p style="font-size: 16px; color: #606770; text-align: center; line-height: 1.6;">感谢您的联系！我们会尽快处理您的请求。这是您提交内容的副本：</p><div style="font-size: 16px; color: #606770; line-height: 1.6; margin-top: 30px; padding: 20px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;"><p style="margin: 0 0 10px;"><strong>您的邮箱:</strong> ${userEmail}</p><p style="margin: 0 0 10px;"><strong>主题:</strong> ${subject}</p><p style="margin: 0; white-space: pre-wrap;"><strong>内容:</strong><br>${message}</p></div><div style="font-size: 12px; color: #8b949e; text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; margin-top: 30px;">© 2025 YUAN的网站. 版权所有.</div></td></tr></table></td></tr></table></body></html>`,
-        }).catch(emailError => {
-            console.error(`发送工单回执邮件给 ${userEmail} 失败:`, emailError);
-        });
-        
-        res.status(201).json({ message: '工单已成功发送！' });
-    } catch (error) {
-        console.error('创建工单 API 出错:', error);
-        res.status(500).json({ message: '服务器错误，无法保存工单。' });
-    }
+        await pool.query('INSERT INTO tickets (userId, userEmail, subject, message) VALUES (?, ?, ?, ?)', 
+            [req.user.id, req.user.email, subject, message]);
+        res.status(201).json({ message: '工单已提交' });
+    } catch (e) { res.status(500).json({ message: '提交失败' }); }
 });
 
-// --- 趣味外号 (Nicknames) API ---
+// --- 外号系统 ---
 app.get('/api/nicknames', authenticateUser, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM nicknames ORDER BY "created_at" DESC');
-        res.json(result.rows);
-    } catch (error) {
-        console.error('获取外号列表 API 出错:', error);
-        res.status(500).json({ message: '服务器错误，无法获取外号列表。' });
-    }
+        const [rows] = await pool.query('SELECT * FROM nicknames ORDER BY created_at DESC');
+        res.json(rows);
+    } catch (e) { res.status(500).json({ message: '加载失败' }); }
 });
 
-// 管理员接口：添加一个新外号
-app.post('/api/admin/nicknames', authenticateAdmin, async (req, res) => {
-    const { creator, nickname, meaning } = req.body;
-    if (!creator || !nickname) {
-        return res.status(400).json({ message: '起外号的人和外号名称不能为空！' });
-    }
-    try {
-        const sql = `INSERT INTO nicknames (creator, nickname, meaning) VALUES ($1, $2, $3) RETURNING *`;
-        const result = await pool.query(sql, [creator, nickname, meaning]);
-        res.status(201).json({ message: '外号添加成功！', nickname: result.rows[0] });
-    } catch (error) {
-        console.error('添加外号 API 出错:', error);
-        res.status(500).json({ message: '服务器错误，无法添加外号。' });
-    }
-});
+// ======================================================
+// --- 7. 管理员 API 路由 ---
+// ======================================================
 
-// 管理员接口：删除一个外号
-app.delete('/api/admin/nicknames/:id', authenticateAdmin, async (req, res) => {
-    const { id } = req.params;
-    try {
-        const result = await pool.query('DELETE FROM nicknames WHERE id = $1', [id]);
-        if (result.rowCount === 0) {
-            return res.status(404).json({ message: '未找到该外号！' });
-        }
-        res.json({ message: '外号已成功删除！' });
-    } catch (error) {
-        console.error('删除外号 API 出错:', error);
-        res.status(500).json({ message: '服务器错误，无法删除外号。' });
-    }
-});
-
-// --- 管理员 (Admin) API ---
 app.post('/api/admin/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1 AND role = $2', [email, 'admin']);
-        const user = result.rows[0];
-        if (!user || !bcrypt.compareSync(password, user.password)) {
-            return res.status(401).json({ message: '管理员凭证无效！' });
-        }
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.json({ message: '管理员登录成功！', token });
-    } catch (error) {
-        console.error('管理员登录 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
-    }
+        const [rows] = await pool.query('SELECT * FROM users WHERE email = ? AND role = "admin"', [email]);
+        const user = rows[0];
+        if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ message: '凭证错误' });
+        
+        const token = jwt.sign({ id: user.id, email: user.email, role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '2h' });
+        res.json({ token });
+    } catch (e) { res.status(500).json({ message: '登录异常' }); }
 });
 
 app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
-    try {
-        const result = await pool.query('SELECT id, email, role, level, "isBanned", "createdAt" FROM users ORDER BY "createdAt" DESC');
-        res.json(result.rows);
-    } catch (error) {
-        console.error('获取用户列表 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
-    }
-});
-
-app.delete('/api/admin/users/:id', authenticateAdmin, async (req, res) => {
-    const { id } = req.params;
-    if (req.user.id == id) {
-        return res.status(400).json({ message: '不能删除自己！' });
-    }
-    try {
-        await pool.query('DELETE FROM tickets WHERE "userId" = $1', [id]);
-        const result = await pool.query('DELETE FROM users WHERE id = $1', [id]);
-        if (result.rowCount === 0) {
-            return res.status(404).json({ message: '用户未找到！' });
-        }
-        res.json({ message: '用户及其所有工单已删除！' });
-    } catch (error) {
-        console.error('删除用户 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
-    }
+    const [rows] = await pool.query('SELECT id, email, role, isBanned, createdAt FROM users');
+    res.json(rows);
 });
 
 app.post('/api/admin/users/:id/toggle-ban', authenticateAdmin, async (req, res) => {
-    const { id } = req.params;
-    if (req.user.id == id) {
-        return res.status(400).json({ message: '不能封禁自己！' });
-    }
-    try {
-        const result = await pool.query('UPDATE users SET "isBanned" = NOT "isBanned" WHERE id = $1 RETURNING "isBanned"', [id]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: '用户未找到！' });
-        }
-        const isBanned = result.rows[0].isBanned;
-        res.json({ message: `用户状态已更新为: ${isBanned ? '已封禁' : '正常'}` });
-    } catch (error) {
-        console.error('切换用户封禁状态 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
-    }
+    if (req.user.id == req.params.id) return res.status(400).json({ message: '不能封禁自己' });
+    await pool.query('UPDATE users SET isBanned = NOT isBanned WHERE id = ?', [req.params.id]);
+    res.json({ message: '状态已更新' });
+});
+
+app.delete('/api/admin/users/:id', authenticateAdmin, async (req, res) => {
+    if (req.user.id == req.params.id) return res.status(400).json({ message: '不能删除自己' });
+    await pool.query('DELETE FROM users WHERE id = ?', [req.params.id]);
+    res.json({ message: '用户已彻底删除' });
 });
 
 app.get('/api/admin/tickets', authenticateAdmin, async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM tickets ORDER BY "createdAt" DESC');
-        res.json(result.rows);
-    } catch (error) {
-        console.error('获取工单列表 API 出错:', error);
-        res.status(500).json({ message: '服务器错误，无法获取工单。' });
-    }
+    const [rows] = await pool.query('SELECT * FROM tickets ORDER BY createdAt DESC');
+    res.json(rows);
+});
+
+app.post('/api/admin/nicknames', authenticateAdmin, async (req, res) => {
+    const { creator, nickname, meaning } = req.body;
+    await pool.query('INSERT INTO nicknames (creator, nickname, meaning) VALUES (?, ?, ?)', [creator, nickname, meaning]);
+    res.json({ message: '外号添加成功' });
 });
 
 // ======================================================
-// --- 7. 页面路由与服务器启动 ---
+// --- 8. 启动与导出 ---
 // ======================================================
 
-app.get('/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
-});
-
-// 在本地开发时启动服务器监听，Vercel 会忽略此部分
+// 针对本地开发模式
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ 本地开发服务器已启动，正在监听 ${PORT} 端口`);
+    app.listen(PORT, () => {
+        console.log(`[Local] Server running at http://localhost:${PORT}`);
     });
 }
 
-// 导出 Express app 实例，供 Vercel 部署使用
+// 针对 Vercel 部署
 module.exports = app;
-
