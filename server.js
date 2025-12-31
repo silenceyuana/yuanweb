@@ -42,28 +42,17 @@ requiredEnvVars.forEach(varName => {
 // ======================================================
 // --- 3. 数据库与第三方服务初始化 ---
 // ======================================================
-// 解析 MySQL 连接字符串
-function parseMySQLConnectionString(uri) {
-    const url = new URL(uri);
-    return {
-        host: url.hostname,
-        port: parseInt(url.port, 10),
-        user: url.username,
-        password: url.password,
-        database: url.pathname.slice(1) // 移除开头的 /
-    };
-}
-
-const dbConfig = parseMySQLConnectionString(process.env.DATABASE_URL);
-
 // 创建 MySQL 连接池
 const pool = mysql.createPool({
-    ...dbConfig,
+    uri: process.env.DATABASE_URL,
     waitForConnections: true,
-    connectionLimit: 5, // Vercel Serverless 环境下建议保持较小的连接数
+    connectionLimit: 1, // 减少连接数
     queueLimit: 0,
+    connectTimeout: 30000, // 减少超时时间
+    acquireTimeout: 30000,
+    timeout: 30000,
     ssl: {
-        rejectUnauthorized: false // 适配大多数云端 MySQL (如 TiDB, Aiven, 阿里云)
+        rejectUnauthorized: false
     }
 });
 
