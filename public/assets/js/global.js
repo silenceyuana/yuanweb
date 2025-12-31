@@ -62,6 +62,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- 4. 退出登录功能 ---
+    if (logoutButton) {
+        logoutButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.removeItem('userToken');
+            localStorage.removeItem('userInfo');
+            alert('您已成功退出！');
+            window.location.href = 'index.html';
+        });
+    }
+
     // --- 5. 自动主题适配 ---
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     function handleThemeChange(e) {
