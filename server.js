@@ -12,7 +12,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const { Pool } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const { Resend } = require('resend');
 const fs = require('fs').promises;
@@ -40,7 +40,7 @@ for (const varName of requiredEnvVars) {
 // ======================================================
 // --- 3. 第三方服务与数据库连接 ---
 // ======================================================
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = {};
 
@@ -97,7 +97,7 @@ app.get('/api/keep-alive', async (req, res) => {
     }
 
     try {
-        await pool.query('SELECT 1;');
+        await supabase.rpc('pg_ping');
         console.log('Database keep-alive ping successful.');
         res.status(200).send('Database keep-alive ping successful.');
     } catch (error) {
@@ -138,8 +138,14 @@ app.post('/api/send-verification-code', async (req, res) => {
     if (!email) return res.status(400).json({ message: '邮箱不能为空！' });
 
     try {
-        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) return res.status(409).json({ message: '该邮箱已被注册！' });
+        const { data: existingUsers, error: fetchError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', email);
+
+        if (fetchError) throw fetchError;
+
+        if (existingUsers.length > 0) return res.status(409).json({ message: '该邮箱已被注册！' });
         
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         verificationCodes[email] = { code, expires: Date.now() + 5 * 60 * 1000 };
@@ -184,12 +190,22 @@ app.post('/api/register', async (req, res) => {
         return res.status(400).json({ message: '验证码无效或已过期！' });
     }
     try {
-        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) {
+        const { data: existingUsers, error: fetchError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', email);
+
+        if (fetchError) throw fetchError;
+
+        if (existingUsers.length > 0) {
             return res.status(409).json({ message: '该邮箱已被注册！' });
         }
         const hashedPassword = bcrypt.hashSync(password, 10);
-        await pool.query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, hashedPassword]);
+        const { error: insertError } = await supabase
+            .from('users')
+            .insert([{ email, password: hashedPassword }]);
+
+        if (insertError) throw insertError;
         delete verificationCodes[email];
 
         // 注册成功后发送欢迎邮件
@@ -216,8 +232,14 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: '邮箱和密码不能为空！' });
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        const user = result.rows[0];
+        const { data: users, error: fetchError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email);
+
+        if (fetchError) throw fetchError;
+
+        const user = users[0];
         if (!user || !bcrypt.compareSync(password, user.password)) {
             return res.status(401).json({ message: '邮箱或密码错误！' });
         }
@@ -242,8 +264,14 @@ app.post('/api/forgot-password', async (req, res) => {
     if (!email) return res.status(400).json({ message: '请输入您的邮箱地址。' });
 
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        const user = result.rows[0];
+        const { data: users, error: fetchError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email);
+
+        if (fetchError) throw fetchError;
+
+        const user = users[0];
 
         if (user) {
             const passwordResetToken = jwt.sign({ id: user.id, email: user.email }, process.env.PASSWORD_RESET_SECRET, { expiresIn: '15m' });
@@ -271,7 +299,10 @@ app.post('/api/reset-password', async (req, res) => {
     try {
         const decoded = jwt.verify(token, process.env.PASSWORD_RESET_SECRET);
         const hashedPassword = bcrypt.hashSync(newPassword, 10);
-        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
+        await supabase
+            .from('users')
+            .update({ password: hashedPassword })
+            .eq('id', decoded.id);
         res.status(200).json({ message: '密码已成功重置！您现在可以用新密码登录了。' });
     } catch (error) {
         console.error('重置密码 API 出错:', error.name);
@@ -284,11 +315,17 @@ app.post('/api/reset-password', async (req, res) => {
 
 app.get('/api/profile', authenticateUser, async (req, res) => {
     try {
-        const result = await pool.query('SELECT email, username FROM users WHERE id = $1', [req.user.id]);
-        if (result.rows.length === 0) {
+        const { data: userProfiles, error: fetchError } = await supabase
+            .from('users')
+            .select('email, username')
+            .eq('id', req.user.id);
+
+        if (fetchError) throw fetchError;
+
+        if (userProfiles.length === 0) {
             return res.status(404).json({ message: '用户不存在。' });
         }
-        res.json(result.rows[0]);
+        res.json(userProfiles[0]);
     } catch (error) {
         console.error('获取个人资料 API 出错:', error);
         res.status(500).json({ message: '服务器内部错误' });
@@ -302,12 +339,21 @@ app.post('/api/profile', authenticateUser, async (req, res) => {
     }
 
     try {
-        const result = await pool.query('UPDATE users SET username = $1 WHERE id = $2 RETURNING username', [username.trim(), req.user.id]);
-        res.json({ message: '昵称更新成功！', username: result.rows[0].username });
-    } catch (error) {
-        if (error.code === '23505') {
-            return res.status(409).json({ message: '该昵称已被使用，请换一个。' });
+        const { data: updatedUser, error: updateError } = await supabase
+            .from('users')
+            .update({ username: username.trim() })
+            .eq('id', req.user.id)
+            .select('username');
+
+        if (updateError) {
+            if (updateError.code === '23505') {
+                return res.status(409).json({ message: '该昵称已被使用，请换一个。' });
+            }
+            throw updateError;
         }
+
+        res.json({ message: '昵称更新成功！', username: updatedUser[0].username });
+    } catch (error) {
         console.error('更新个人资料 API 出错:', error);
         res.status(500).json({ message: '服务器内部错误，无法更新昵称。' });
     }
@@ -319,13 +365,16 @@ app.get('/api/fortune', authenticateUser, async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
 
     try {
-        const existingFortune = await pool.query(
-            'SELECT * FROM fortunes WHERE "userId" = $1 AND fortune_date = $2',
-            [userId, today]
-        );
+        const { data: existingFortune, error: fetchError } = await supabase
+            .from('fortunes')
+            .select('*')
+            .eq('userId', userId)
+            .eq('fortune_date', today);
 
-        if (existingFortune.rows.length > 0) {
-            return res.json(existingFortune.rows[0]);
+        if (fetchError) throw fetchError;
+
+        if (existingFortune.length > 0) {
+            return res.json(existingFortune[0]);
         }
 
         let quote = '生活就是这样，一半是回忆，一半是继续。';
@@ -348,13 +397,20 @@ app.get('/api/fortune', authenticateUser, async (req, res) => {
         const image_url = `https://picsum.photos/500/300?random=${Math.random()}`;
         const image_prompt = "随机风景";
 
-        const newFortune = await pool.query(
-            `INSERT INTO fortunes ("userId", luck_number, luck_level_text, wealth_luck, career_luck, quote, quote_source, image_url, image_prompt, fortune_date) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [userId, luck_number, luck_level_text, wealth_luck, career_luck, quote, quote_source, image_url, image_prompt, today]
-        );
+        const { data: newFortune, error: insertError } = await supabase
+            .from('fortunes')
+            .insert([
+                { 
+                    userId, luck_number, luck_level_text, wealth_luck, career_luck, 
+                    quote, quote_source, image_url, image_prompt, fortune_date: today 
+                }
+            ])
+            .select('*')
+            .single();
         
-        res.status(201).json(newFortune.rows[0]);
+        if (insertError) throw insertError;
+        
+        res.status(201).json(newFortune);
 
     } catch (dbError) {
         console.error('每日运势 API 数据库操作出错:', dbError);
