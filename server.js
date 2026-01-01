@@ -492,11 +492,17 @@ app.delete('/api/admin/nicknames/:id', authenticateAdmin, async (req, res) => {
 app.post('/api/admin/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1 AND role = $2', [email, 'admin']);
-        const user = result.rows[0];
-        if (!user || !bcrypt.compareSync(password, user.password)) {
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .eq('role', 'admin')
+            .single();
+
+        if (error || !user || !bcrypt.compareSync(password, user.password)) {
             return res.status(401).json({ message: '管理员凭证无效！' });
         }
+
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.json({ message: '管理员登录成功！', token });
     } catch (error) {
