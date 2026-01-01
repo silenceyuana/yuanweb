@@ -65,7 +65,6 @@
 
 3.  **配置环境变量**:
     *   在项目设置中，添加以下环境变量（参考 `.env.example`）：
-        - `DATABASE_URL`
         - `SUPABASE_URL`
         - `SUPABASE_ANON_KEY`
         - `JWT_SECRET`

@@ -425,9 +425,12 @@ app.post('/api/tickets', authenticateUser, async (req, res) => {
         return res.status(400).json({ message: '工单主题和内容不能为空！' });
     }
     const { id: userId, email: userEmail } = req.user;
-    const sql = `INSERT INTO tickets ("userId", "userEmail", subject, message) VALUES ($1, $2, $3, $4)`;
     try {
-        await pool.query(sql, [userId, userEmail, subject, message]);
+        const { data, error } = await supabase
+            .from('tickets')
+            .insert({ userId, userEmail, subject, message });
+
+        if (error) throw error;
 
         resend.emails.send({
             from: `YUAN的网站 <${process.env.MAIL_FROM_ADDRESS}>`,
