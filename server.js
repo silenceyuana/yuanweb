@@ -25,7 +25,7 @@ const PORT = process.env.PORT || 3000;
 
 // 检查所有必需的环境变量
 const requiredEnvVars = [
-    'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
+    'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'JWT_SECRET',
     'PASSWORD_RESET_SECRET', 'BASE_URL', 'TURNSTILE_SECRET_KEY', 
     'RESEND_API_KEY', 'MAIL_FROM_ADDRESS', 'CRON_SECRET'
 ];
@@ -481,41 +481,4 @@ app.post('/api/admin/users/:id/toggle-ban', authenticateAdmin, async (req, res) 
     }
     try {
         const result = await pool.query('UPDATE users SET "isBanned" = NOT "isBanned" WHERE id = $1 RETURNING "isBanned"', [id]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: '用户未找到！' });
-        }
-        const isBanned = result.rows[0].isBanned;
-        res.json({ message: `用户状态已更新为: ${isBanned ? '已封禁' : '正常'}` });
-    } catch (error) {
-        console.error('切换用户封禁状态 API 出错:', error);
-        res.status(500).json({ message: '服务器内部错误' });
-    }
-});
-
-app.get('/api/admin/tickets', authenticateAdmin, async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM tickets ORDER BY "createdAt" DESC');
-        res.json(result.rows);
-    } catch (error) {
-        console.error('获取工单列表 API 出错:', error);
-        res.status(500).json({ message: '服务器错误，无法获取工单。' });
-    }
-});
-
-// ======================================================
-// --- 7. 页面路由与服务器启动 ---
-// ======================================================
-
-app.get('/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
-});
-
-// 在本地开发时启动服务器监听，Vercel 会忽略此部分
-if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ 本地开发服务器已启动，正在监听 ${PORT} 端口`);
-    });
-}
-
-// 导出 Express app 实例，供 Vercel 部署使用
-module.exports = app;
+        if
