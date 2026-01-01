@@ -481,4 +481,17 @@ app.post('/api/admin/users/:id/toggle-ban', authenticateAdmin, async (req, res) 
     }
     try {
         const result = await pool.query('UPDATE users SET "isBanned" = NOT "isBanned" WHERE id = $1 RETURNING "isBanned"', [id]);
-        if
+        if (result.rowCount > 0) {
+            res.json({ message: '用户封禁状态已切换！', isBanned: result.rows[0].isBanned });
+        } else {
+            res.status(404).json({ message: '未找到用户！' });
+        }
+    } catch (error) {
+        console.error('切换用户封禁状态 API 出错:', error);
+        res.status(500).json({ message: '服务器内部错误' });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`服务器已启动，监听端口 ${PORT}...`);
+});
